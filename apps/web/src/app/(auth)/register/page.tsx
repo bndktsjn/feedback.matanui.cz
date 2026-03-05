@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { auth, ApiError } from '@/lib/api';
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get('redirect');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,7 +21,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await auth.register({ email, password, displayName });
-      router.push('/orgs');
+      router.push(redirectTo || '/orgs');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Registration failed');
     } finally {
@@ -34,7 +36,7 @@ export default function RegisterPage() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-900">Create account</h1>
           <p className="mt-2 text-sm text-gray-600">
             Already have an account?{' '}
-            <Link href="/login" className="font-medium text-blue-600 hover:text-blue-500">
+            <Link href={redirectTo ? `/login?redirect=${encodeURIComponent(redirectTo)}` : '/login'} className="font-medium text-blue-600 hover:text-blue-500">
               Sign in
             </Link>
           </p>

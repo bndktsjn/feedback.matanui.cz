@@ -1,8 +1,17 @@
-import { Body, Controller, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { randomBytes } from 'crypto';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto, UpdateMeDto } from './dto';
+import {
+  RegisterDto,
+  LoginDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  UpdateMeDto,
+  ChangePasswordDto,
+  ChangeEmailDto,
+} from './dto';
+import { StorageService } from '../storage/storage.service';
 import { SessionGuard } from './guards/session.guard';
 import { CsrfGuard } from './guards/csrf.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -19,7 +28,10 @@ interface AuthenticatedUser {
 
 @Controller('v1/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly storageService: StorageService,
+  ) {}
 
   @Post('register')
   async register(@Body() dto: RegisterDto, @Req() req: Request, @Res() res: Response) {
@@ -65,6 +77,36 @@ export class AuthController {
   @UseGuards(SessionGuard, CsrfGuard)
   async updateMe(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateMeDto) {
     return this.authService.updateMe(user.id, dto);
+  }
+
+  @Post('change-password')
+  @UseGuards(SessionGuard, CsrfGuard)
+  async changePassword(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangePasswordDto) {
+    return this.authService.changePassword(user.id, dto);
+  }
+
+  @Post('change-email')
+  @UseGuards(SessionGuard, CsrfGuard)
+  async changeEmail(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangeEmailDto) {
+    return this.authService.changeEmail(user.id, dto);
+  }
+
+  @Post('avatar-upload-url')
+  @UseGuards(SessionGuard, CsrfGuard)
+  async getAvatarUploadUrl(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { filename: string; mimeType: string },
+  ) {
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowed.includes(body.mimeType)) {
+      throw new BadRequestException('Invalid file type. Allowed: JPEG, PNG, GIF, WebP');
+    }
+    return this.storageService.getPresignedUploadUrl(
+      `avatars/${user.id}`,
+      body.filename,
+      body.mimeType,
+      300,
+    );
   }
 
   @Post('forgot-password')

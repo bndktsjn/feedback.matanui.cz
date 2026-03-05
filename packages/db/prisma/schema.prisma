@@ -40,6 +40,8 @@ model User {
   assignedTasks       Task[]               @relation("TaskAssignee")
   createdTasks        Task[]               @relation("TaskCreator")
   taskChanges         TaskHistory[]
+  sentInvitations      OrganizationInvitation[] @relation("InvitationInviter")
+  acceptedInvitations  OrganizationInvitation[] @relation("InvitationAccepter")
 
   @@map("users")
 }
@@ -76,8 +78,9 @@ model Organization {
   deletedAt        DateTime? @map("deleted_at") @db.Timestamptz()
 
   owner   User                 @relation("OrgOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  members OrganizationMember[]
-  projects Project[]
+  members     OrganizationMember[]
+  invitations OrganizationInvitation[]
+  projects    Project[]
 
   @@index([ownerId])
   @@map("organizations")
@@ -105,6 +108,43 @@ model OrganizationMember {
   @@index([orgId])
   @@index([userId])
   @@map("organization_members")
+}
+
+// ============================================================
+// ORGANIZATION INVITATIONS
+// ============================================================
+
+enum InvitationStatus {
+  pending
+  accepted
+  revoked
+  expired
+
+  @@map("invitation_status")
+}
+
+model OrganizationInvitation {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId       String           @map("org_id") @db.Uuid
+  email       String           @db.VarChar(255)
+  role        OrgRole          @default(member)
+  token       String           @unique @db.VarChar(128)
+  status      InvitationStatus @default(pending)
+  invitedById String           @map("invited_by_id") @db.Uuid
+  expiresAt   DateTime         @map("expires_at") @db.Timestamptz()
+  acceptedAt  DateTime?        @map("accepted_at") @db.Timestamptz()
+  acceptedById String?         @map("accepted_by_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitationInviter", fields: [invitedById], references: [id])
+  acceptedBy   User?        @relation("InvitationAccepter", fields: [acceptedById], references: [id])
+
+  @@index([orgId])
+  @@index([email])
+  @@index([token])
+  @@map("organization_invitations")
 }
 
 // ============================================================

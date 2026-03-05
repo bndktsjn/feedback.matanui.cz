@@ -7,7 +7,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, UpdateMeDto } from './dto';
+import { RegisterDto, UpdateMeDto, ChangePasswordDto, ChangeEmailDto } from './dto';
 
 const BCRYPT_ROUNDS = 12;
 const MAX_FAILED_LOGINS = 5;
@@ -107,6 +107,65 @@ export class AuthService {
       data,
       select: this.userSelect(),
     });
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId, deletedAt: null },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!valid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    return { message: 'Password changed successfully' };
+  }
+
+  async changeEmail(userId: string, dto: ChangeEmailDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId, deletedAt: null },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    // Verify password before allowing email change
+    const valid = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!valid) {
+      throw new BadRequestException('Password is incorrect');
+    }
+
+    const newEmail = dto.newEmail.toLowerCase().trim();
+    if (newEmail === user.email) {
+      throw new BadRequestException('New email is the same as current email');
+    }
+
+    // Check if email is already taken
+    const existing = await this.prisma.user.findUnique({
+      where: { email: newEmail },
+    });
+    if (existing) {
+      throw new ConflictException('Email already in use');
+    }
+
+    // Update email and mark as unverified
+    const verificationToken = randomBytes(32).toString('hex');
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        email: newEmail,
+        emailVerified: false,
+        verificationToken,
+      },
+      select: this.userSelect(),
+    });
+    // TODO: Send verification email to new address
   }
 
   async forgotPassword(email: string) {

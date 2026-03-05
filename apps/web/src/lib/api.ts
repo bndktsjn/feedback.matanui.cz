@@ -59,6 +59,15 @@ export const auth = {
   me: () => apiFetch<User>('/auth/me'),
   updateMe: (data: { displayName?: string; avatarUrl?: string }) =>
     apiFetch<User>('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }),
+  changePassword: (data: { currentPassword: string; newPassword: string }) =>
+    apiFetch('/auth/change-password', { method: 'POST', body: JSON.stringify(data) }),
+  changeEmail: (data: { newEmail: string; password: string }) =>
+    apiFetch<User>('/auth/change-email', { method: 'POST', body: JSON.stringify(data) }),
+  avatarUploadUrl: (data: { filename: string; mimeType: string }) =>
+    apiFetch<{ storageKey: string; uploadUrl: string; publicUrl: string }>(
+      '/auth/avatar-upload-url',
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
   forgotPassword: (email: string) =>
     apiFetch('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (token: string, newPassword: string) =>
@@ -80,17 +89,36 @@ export const orgs = {
     apiFetch(`/orgs/${orgId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (orgId: string) => apiFetch(`/orgs/${orgId}`, { method: 'DELETE' }),
   members: {
-    list: (orgId: string) => apiFetch(`/orgs/${orgId}/members`),
+    list: (orgId: string) => apiFetch<OrgMember[]>(`/orgs/${orgId}/members`),
     add: (orgId: string, data: { userId: string; role: string }) =>
       apiFetch(`/orgs/${orgId}/members`, { method: 'POST', body: JSON.stringify(data) }),
     update: (orgId: string, memberId: string, data: { role: string }) =>
-      apiFetch(`/orgs/${orgId}/members/${memberId}`, {
+      apiFetch<OrgMember>(`/orgs/${orgId}/members/${memberId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
       }),
     remove: (orgId: string, memberId: string) =>
       apiFetch(`/orgs/${orgId}/members/${memberId}`, { method: 'DELETE' }),
   },
+  invitations: {
+    list: (orgId: string) => apiFetch<OrgInvitation[]>(`/orgs/${orgId}/invitations`),
+    create: (orgId: string, data: { email: string; role?: string }) =>
+      apiFetch<OrgInvitation>(`/orgs/${orgId}/invitations`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    revoke: (orgId: string, invitationId: string) =>
+      apiFetch(`/orgs/${orgId}/invitations/${invitationId}`, { method: 'DELETE' }),
+    resend: (orgId: string, invitationId: string) =>
+      apiFetch(`/orgs/${orgId}/invitations/${invitationId}/resend`, { method: 'POST' }),
+  },
+};
+
+// Invitations (public token-based)
+export const invitations = {
+  getByToken: (token: string) => apiFetch<InvitationDetail>(`/invitations/${token}`),
+  accept: (token: string) =>
+    apiFetch<InvitationAcceptResult>(`/invitations/${token}/accept`, { method: 'POST' }),
 };
 
 // Projects
@@ -176,6 +204,68 @@ export interface OrgWithRole {
   role: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OrgMember {
+  id: string;
+  orgId: string;
+  userId: string;
+  role: string;
+  joinedAt: string;
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+}
+
+export interface OrgInvitation {
+  id: string;
+  orgId: string;
+  email: string;
+  role: string;
+  token: string;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+  invitedBy: {
+    id: string;
+    email: string;
+    displayName: string;
+  };
+  acceptedBy?: {
+    id: string;
+    email: string;
+    displayName: string;
+  } | null;
+}
+
+export interface InvitationDetail {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  expiresAt: string;
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  invitedBy: {
+    id: string;
+    displayName: string;
+  };
+}
+
+export interface InvitationAcceptResult {
+  alreadyMember: boolean;
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  membership?: OrgMember;
 }
 
 export interface Thread {

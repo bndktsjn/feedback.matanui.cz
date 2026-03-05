@@ -28,8 +28,12 @@ if ! command -v rsync &>/dev/null; then
   error "rsync is not installed."
 fi
 
-if ! ssh -q -o ConnectTimeout=5 "${REMOTE_USER}@${REMOTE_HOST}" exit 2>/dev/null; then
-  error "Cannot connect to ${REMOTE_USER}@${REMOTE_HOST}. Check SSH access."
+if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 "${REMOTE_USER}@${REMOTE_HOST}" exit 2>/dev/null; then
+  warn "Cannot connect to ${REMOTE_USER}@${REMOTE_HOST} via key-based SSH."
+  warn "Make sure you have SSH key access or run the deploy steps manually."
+  read -p "Continue anyway? [y/N] " -n 1 -r
+  echo
+  [[ $REPLY =~ ^[Yy]$ ]] || exit 1
 fi
 
 # ─── Sync project to remote ──────────────────────────────────────────────────
@@ -57,20 +61,20 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<ENDSSH
   cd "${REMOTE_DIR}"
 
   echo ">>> Pulling images & building containers..."
-  docker compose -f infra/docker-compose.prod.yml up --build -d
+  docker compose -f infra/docker-compose.prod.yml --env-file .env up --build -d
 
   echo ">>> Waiting for Postgres to be healthy..."
   sleep 5
 
   echo ">>> Running Prisma migrations..."
-  docker compose -f infra/docker-compose.prod.yml exec api \
+  docker compose -f infra/docker-compose.prod.yml --env-file .env exec api \
     node -e "
       const { execSync } = require('child_process');
       execSync('npx prisma migrate deploy --schema=/app/packages/db/prisma/schema.prisma', { stdio: 'inherit' });
     "
 
   echo ">>> Services status:"
-  docker compose -f infra/docker-compose.prod.yml ps
+  docker compose -f infra/docker-compose.prod.yml --env-file .env ps
 ENDSSH
 
 # ─── Verify ──────────────────────────────────────────────────────────────────

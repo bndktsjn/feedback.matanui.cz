@@ -64,3 +64,63 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        env:
+          REMOTE_USER: ${{ secrets.DEPLOY_USER }}
+          REMOTE_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          # Create deploy script from deploy.sh but run remotely
+          ssh $REMOTE_USER@$REMOTE_HOST bash -s <<'ENDSSH'
+            set -euo pipefail
+            cd /var/www/feedback.matanui.cz/public_html
+            
+            echo ">>> Pulling latest changes from GitHub..."
+            git pull origin main
+            
+            echo ">>> Building and starting services..."
+            docker compose -f infra/docker-compose.prod.yml up --build -d
+            
+            echo ">>> Waiting for Postgres to be healthy..."
+            sleep 5
+            
+            echo ">>> Running Prisma migrations..."
+            docker compose -f infra/docker-compose.prod.yml exec api \
+              node -e "
+                const { execSync } = require('child_process');
+                execSync('npx prisma migrate deploy --schema=/app/packages/db/prisma/schema.prisma', { stdio: 'inherit' });
+              "
+            
+            echo ">>> Services status:"
+            docker compose -f infra/docker-compose.prod.yml ps
+          ENDSSH
+
+      - name: Verify deployment
+        run: |
+          sleep 10
+          curl -f -s https://feedback.matanui.cz/api/v1/health | jq .
+          curl -f -s -o /dev/null -w '%{http_code}' https://feedback.matanui.cz/

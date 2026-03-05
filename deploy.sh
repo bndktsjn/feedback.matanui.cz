@@ -57,20 +57,20 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<ENDSSH
   cd "${REMOTE_DIR}"
 
   echo ">>> Pulling images & building containers..."
-  docker compose --env-file .env -f infra/docker-compose.prod.yml up --build -d
+  docker compose -f infra/docker-compose.prod.yml up --build -d
 
   echo ">>> Waiting for Postgres to be healthy..."
   sleep 5
 
   echo ">>> Running Prisma migrations..."
-  docker compose --env-file .env -f infra/docker-compose.prod.yml exec api \
+  docker compose -f infra/docker-compose.prod.yml exec api \
     node -e "
       const { execSync } = require('child_process');
       execSync('npx prisma migrate deploy --schema=/app/packages/db/prisma/schema.prisma', { stdio: 'inherit' });
     "
 
   echo ">>> Services status:"
-  docker compose --env-file .env -f infra/docker-compose.prod.yml ps
+  docker compose -f infra/docker-compose.prod.yml ps
 ENDSSH
 
 # ─── Verify ──────────────────────────────────────────────────────────────────

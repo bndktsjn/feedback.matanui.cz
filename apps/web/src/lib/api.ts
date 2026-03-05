@@ -68,6 +68,8 @@ export const auth = {
       '/auth/avatar-upload-url',
       { method: 'POST', body: JSON.stringify(data) },
     ),
+  deleteAccount: (password: string) =>
+    apiFetch('/auth/account', { method: 'DELETE', body: JSON.stringify({ password }) }),
   forgotPassword: (email: string) =>
     apiFetch('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   resetPassword: (token: string, newPassword: string) =>

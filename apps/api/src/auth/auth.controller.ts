@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { randomBytes } from 'crypto';
 import { AuthService } from './auth.service';
@@ -107,6 +107,22 @@ export class AuthController {
       body.mimeType,
       300,
     );
+  }
+
+  @Delete('account')
+  @UseGuards(SessionGuard, CsrfGuard)
+  async deleteAccount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { password: string },
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    await this.authService.deleteAccount(user.id, body.password);
+    req.session.destroy(() => {
+      res.clearCookie('feedback_sid');
+      res.clearCookie('csrf_token');
+      res.json({ message: 'Account deleted' });
+    });
   }
 
   @Post('forgot-password')

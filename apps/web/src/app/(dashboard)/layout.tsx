@@ -5,6 +5,10 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { auth, orgs, projects, User, OrgWithRole } from '@/lib/api';
 
+interface ProjectSettings {
+  apiKey?: string;
+}
+
 interface ProjectContext {
   id: string;
   name: string;
@@ -69,6 +73,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [loading, setLoading] = useState(true);
   const [orgSwitcherOpen, setOrgSwitcherOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
+  const [wsModalOpen, setWsModalOpen] = useState(false);
+  const [wsEmbedCode, setWsEmbedCode] = useState('');
+  const [wsCopied, setWsCopied] = useState(false);
 
   // Parse URL context
   const orgSlugMatch = pathname.match(/^\/o\/([^/]+)/);
@@ -262,13 +269,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               >
                 Kanban
               </NavLink>
-              <NavLink
-                href={`/p/${projectCtx.slug}/workspace`}
-                active={pathname.includes('/workspace')}
-                icon={Icons.monitor}
+              <button
+                onClick={async () => {
+                  if (!projectCtx) return;
+                  try {
+                    const detail = await projects.get(projectCtx.orgId, projectCtx.id) as { settings?: ProjectSettings };
+                    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+                    const key = detail?.settings?.apiKey;
+                    setWsEmbedCode(key ? `<script src="${origin}/static/overlay.js" data-key="${key}"></script>` : '');
+                  } catch { setWsEmbedCode(''); }
+                  setWsModalOpen(true);
+                }}
+                className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors text-gray-600 hover:bg-gray-50 hover:text-gray-900`}
               >
+                <span className="flex h-4 w-4 items-center justify-center text-current opacity-60">{Icons.monitor}</span>
                 Workspace
-              </NavLink>
+              </button>
               <NavLink
                 href={`/p/${projectCtx.slug}/settings`}
                 active={pathname.endsWith('/settings')}
@@ -375,6 +391,79 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <main className="flex-1 overflow-y-auto bg-gray-50 p-6">{children}</main>
       </div>
+
+      {/* Workspace Embed Modal */}
+      {wsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">Workspace</h2>
+              <button
+                onClick={() => { setWsModalOpen(false); setWsCopied(false); }}
+                className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              {projectCtx && (
+                <a
+                  href={`/p/${projectCtx.slug}/workspace`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 rounded-lg border border-gray-200 p-4 transition hover:border-blue-300 hover:bg-blue-50"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-100">
+                    <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Open Visual Workspace</p>
+                    <p className="text-xs text-gray-500">Full-screen feedback workspace with visual pins</p>
+                  </div>
+                  <svg className="ml-auto h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              )}
+
+              <div>
+                <h3 className="text-sm font-medium text-gray-900">Embed Code</h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Add this script before the closing <code className="rounded bg-gray-100 px-1 py-0.5 text-[10px]">&lt;/body&gt;</code> tag to enable the feedback overlay.
+                </p>
+                {wsEmbedCode ? (
+                  <div className="relative mt-3">
+                    <pre className="rounded-lg bg-gray-900 p-4 text-sm text-green-400 overflow-x-auto">
+                      {wsEmbedCode}
+                    </pre>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(wsEmbedCode); setWsCopied(true); setTimeout(() => setWsCopied(false), 2000); }}
+                      className="absolute right-2 top-2 rounded-md bg-gray-700 px-3 py-1 text-xs font-medium text-white hover:bg-gray-600"
+                    >
+                      {wsCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-gray-400">No API key configured for this project.</p>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end border-t border-gray-200 px-6 py-4">
+              <button
+                onClick={() => { setWsModalOpen(false); setWsCopied(false); }}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

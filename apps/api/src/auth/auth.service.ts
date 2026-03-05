@@ -213,6 +213,28 @@ export class AuthService {
     });
   }
 
+  async deleteAccount(userId: string, password: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId, deletedAt: null },
+    });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      throw new BadRequestException('Password is incorrect');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { deletedAt: new Date(), email: `deleted_${userId}@deleted.local` },
+      }),
+      this.prisma.session.deleteMany({ where: { userId } }),
+    ]);
+
+    return { message: 'Account deleted successfully' };
+  }
+
   async verifyEmail(token: string) {
     const user = await this.prisma.user.findFirst({
       where: { verificationToken: token, deletedAt: null },

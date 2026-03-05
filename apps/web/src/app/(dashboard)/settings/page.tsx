@@ -31,6 +31,11 @@ export default function SettingsPage() {
   const [emailPassword, setEmailPassword] = useState('');
   const [changingEmail, setChangingEmail] = useState(false);
 
+  // Delete account
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
   useEffect(() => {
     auth
       .me()
@@ -149,6 +154,21 @@ export default function SettingsPage() {
       showToast(getErrorMessage(err), 'error');
     } finally {
       setChangingPassword(false);
+    }
+  }
+
+  // ── Delete Account ──
+
+  async function handleDeleteAccount() {
+    if (!deletePassword) return;
+    setDeletingAccount(true);
+    try {
+      await auth.deleteAccount(deletePassword);
+      router.push('/login');
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      setDeletingAccount(false);
     }
   }
 
@@ -427,6 +447,75 @@ export default function SettingsPage() {
               {user?.emailVerified ? 'Yes' : 'No'}
             </span>
           </div>
+        </div>
+      </section>
+
+      {/* ── Delete Account ── */}
+      <section className="rounded-lg border border-red-200 bg-white">
+        <div className="border-b border-red-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-red-700">Danger Zone</h2>
+        </div>
+        <div className="p-6">
+          {!showDeleteConfirm ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Delete account</p>
+                <p className="text-sm text-gray-500">
+                  Permanently delete your account and all associated data. This action cannot be
+                  undone.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="ml-4 shrink-0 rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+              >
+                Delete account
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-md bg-red-50 p-4">
+                <p className="text-sm font-medium text-red-800">
+                  Are you sure? This will permanently delete your account, remove you from all
+                  organizations, and erase your data. This cannot be undone.
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="deletePassword"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Enter your password to confirm
+                </label>
+                <input
+                  id="deletePassword"
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  placeholder="Your current password"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deletingAccount || !deletePassword}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deletingAccount ? 'Deleting...' : 'Yes, delete my account'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    setDeletePassword('');
+                  }}
+                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </div>

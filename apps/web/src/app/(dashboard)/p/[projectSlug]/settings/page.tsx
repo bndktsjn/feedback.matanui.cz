@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { orgs, projects } from '@/lib/api';
+import { useParams, useRouter } from 'next/navigation';
+import { orgs, projects, ApiError } from '@/lib/api';
 
 interface ProjectDetail {
   id: string;
@@ -14,12 +14,29 @@ interface ProjectDetail {
   settings: { apiKey?: string };
 }
 
+type ToastType = { message: string; type: 'success' | 'error' };
+
 export default function ProjectSettingsPage() {
   const params = useParams();
+  const router = useRouter();
   const projectSlug = params.projectSlug as string;
   const [project, setProject] = useState<ProjectDetail | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [orgSlug, setOrgSlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [toast, setToast] = useState<ToastType | null>(null);
+
+  // Edit form
+  const [editName, setEditName] = useState('');
+  const [editBaseUrl, setEditBaseUrl] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Delete
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -34,6 +51,11 @@ export default function ProjectSettingsPage() {
           if (found) {
             const detail = (await projects.get(org.id, found.id)) as ProjectDetail;
             setProject(detail);
+            setOrgId(org.id);
+            setOrgSlug(org.slug);
+            setEditName(detail.name);
+            setEditBaseUrl(detail.baseUrl);
+            setEditDescription(detail.description || '');
             break;
           }
         }
@@ -45,6 +67,17 @@ export default function ProjectSettingsPage() {
     }
     load();
   }, [projectSlug]);
+
+  function showToastMsg(message: string, type: 'success' | 'error') {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  }
+
+  function getErrorMessage(err: unknown): string {
+    if (err instanceof ApiError) return err.message;
+    if (err instanceof Error) return err.message;
+    return 'An unexpected error occurred';
+  }
 
   function getEmbedCode(): string {
     if (!project?.settings?.apiKey) return '';
@@ -60,45 +93,131 @@ export default function ProjectSettingsPage() {
     });
   }
 
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!project || !orgId) return;
+    setSaving(true);
+    try {
+      const updated = (await projects.update(orgId, project.id, {
+        name: editName.trim(),
+        baseUrl: editBaseUrl.trim(),
+        description: editDescription.trim() || undefined,
+      })) as ProjectDetail;
+      setProject(updated);
+      showToastMsg('Project updated', 'success');
+    } catch (err) {
+      showToastMsg(getErrorMessage(err), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!project || !orgId || !orgSlug) return;
+    setDeleting(true);
+    try {
+      await projects.delete(orgId, project.id);
+      router.push(`/o/${orgSlug}/projects`);
+    } catch (err) {
+      showToastMsg(getErrorMessage(err), 'error');
+      setDeleting(false);
+    }
+  }
+
   if (loading) return <div className="text-gray-500">Loading settings...</div>;
   if (!project) return <div className="text-gray-500">Project not found.</div>;
 
   const embedCode = getEmbedCode();
+  const hasChanges =
+    editName.trim() !== project.name ||
+    editBaseUrl.trim() !== project.baseUrl ||
+    (editDescription.trim() || '') !== (project.description || '');
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Project Settings</h1>
 
-      <div className="mt-6 space-y-6">
-        {/* Project Info */}
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-gray-900">General</h2>
-          <dl className="mt-4 space-y-3">
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Name</dt>
-              <dd className="text-sm text-gray-900">{project.name}</dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Slug</dt>
-              <dd className="text-sm text-gray-900">{project.slug}</dd>
-            </div>
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Base URL</dt>
-              <dd className="text-sm text-gray-900">{project.baseUrl}</dd>
-            </div>
-            {project.description && (
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Description</dt>
-                <dd className="text-sm text-gray-900">{project.description}</dd>
-              </div>
-            )}
-          </dl>
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            toast.type === 'success'
+              ? 'border-green-200 bg-green-50 text-green-800'
+              : 'border-red-200 bg-red-50 text-red-800'
+          }`}
+        >
+          {toast.message}
         </div>
+      )}
 
-        {/* API Key */}
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
+      {/* ── General Settings ── */}
+      <section className="rounded-lg border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">General</h2>
+        </div>
+        <form onSubmit={handleSave} className="space-y-4 p-6">
+          <div>
+            <label htmlFor="projName" className="block text-sm font-medium text-gray-700">
+              Name
+            </label>
+            <input
+              id="projName"
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Slug</label>
+            <p className="mt-1 text-sm text-gray-500">{project.slug}</p>
+          </div>
+          <div>
+            <label htmlFor="projBaseUrl" className="block text-sm font-medium text-gray-700">
+              Base URL
+            </label>
+            <input
+              id="projBaseUrl"
+              type="url"
+              value={editBaseUrl}
+              onChange={(e) => setEditBaseUrl(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="projDesc" className="block text-sm font-medium text-gray-700">
+              Description
+            </label>
+            <textarea
+              id="projDesc"
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={3}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Optional project description"
+            />
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={saving || !hasChanges}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save changes'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* ── API Key ── */}
+      <section className="rounded-lg border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">API Key</h2>
-          <p className="mt-1 text-sm text-gray-500">
+        </div>
+        <div className="p-6">
+          <p className="text-sm text-gray-500">
             Use this key to authenticate overlay requests from your website.
           </p>
           {project.settings?.apiKey ? (
@@ -117,11 +236,15 @@ export default function ProjectSettingsPage() {
             <p className="mt-3 text-sm text-gray-400">No API key generated.</p>
           )}
         </div>
+      </section>
 
-        {/* Embed Code */}
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
+      {/* ── Embed Code ── */}
+      <section className="rounded-lg border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">Embed Code</h2>
-          <p className="mt-1 text-sm text-gray-500">
+        </div>
+        <div className="p-6">
+          <p className="text-sm text-gray-500">
             Add this script tag to your website&apos;s HTML to enable the feedback overlay.
           </p>
           {embedCode ? (
@@ -140,7 +263,71 @@ export default function ProjectSettingsPage() {
             <p className="mt-3 text-sm text-gray-400">No API key available for embed code.</p>
           )}
         </div>
-      </div>
+      </section>
+
+      {/* ── Danger Zone ── */}
+      <section className="rounded-lg border border-red-200 bg-white">
+        <div className="border-b border-red-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-red-700">Danger Zone</h2>
+        </div>
+        <div className="p-6">
+          {!showDeleteConfirm ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Delete this project</p>
+                <p className="text-sm text-gray-500">
+                  Permanently delete this project and all its threads, comments, and data.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="ml-4 shrink-0 rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+              >
+                Delete project
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-md bg-red-50 p-4">
+                <p className="text-sm font-medium text-red-800">
+                  This will permanently delete the project &ldquo;{project.name}&rdquo; and all
+                  associated data. This action cannot be undone.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Type <strong>{project.name}</strong> to confirm
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  placeholder={project.name}
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting || deleteConfirmText !== project.name}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting...' : 'Yes, delete this project'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    setDeleteConfirmText('');
+                  }}
+                  className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

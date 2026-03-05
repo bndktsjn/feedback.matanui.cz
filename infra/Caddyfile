@@ -1,0 +1,11 @@
+# Local development — use localhost:8080
+# Production — replace with: feedback.matanui.cz {
+:8080 {
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

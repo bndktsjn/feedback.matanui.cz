@@ -1,0 +1,13 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^@feedback/db$": "<rootDir>/../../packages/db/src/client",
+    "^@feedback/shared$": "<rootDir>/../../packages/shared/src/index"
+  }
+}

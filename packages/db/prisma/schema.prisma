@@ -1,0 +1,430 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// USERS & AUTH
+// ============================================================
+
+model User {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email              String    @unique @db.VarChar(255)
+  passwordHash       String    @map("password_hash") @db.VarChar(255)
+  displayName        String    @map("display_name") @db.VarChar(255)
+  avatarUrl          String?   @map("avatar_url") @db.VarChar(512)
+  emailVerified      Boolean   @default(false) @map("email_verified")
+  verificationToken  String?   @map("verification_token") @db.VarChar(255)
+  resetToken         String?   @map("reset_token") @db.VarChar(255)
+  resetTokenExpires  DateTime? @map("reset_token_expires") @db.Timestamptz()
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until") @db.Timestamptz()
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz()
+
+  sessions            Session[]
+  ownedOrganizations  Organization[]       @relation("OrgOwner")
+  orgMemberships      OrganizationMember[]
+  projectMemberships  ProjectMember[]
+  invitedMembers      ProjectMember[]      @relation("InvitedBy")
+  authoredThreads     Thread[]             @relation("ThreadAuthor")
+  resolvedThreads     Thread[]             @relation("ThreadResolver")
+  authoredComments    Comment[]
+  mentions            Mention[]
+  uploadedAttachments Attachment[]
+  assignedTasks       Task[]               @relation("TaskAssignee")
+  createdTasks        Task[]               @relation("TaskCreator")
+  taskChanges         TaskHistory[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @db.VarChar(128)
+  userId    String   @map("user_id") @db.Uuid
+  data      Json     @default("{}")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz()
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================
+// ORGANIZATIONS (billing entity)
+// ============================================================
+
+model Organization {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String    @db.VarChar(255)
+  slug             String    @unique @db.VarChar(100)
+  billingEmail     String?   @map("billing_email") @db.VarChar(255)
+  plan             String    @default("free") @db.VarChar(50)
+  stripeCustomerId String?   @map("stripe_customer_id") @db.VarChar(255)
+  settings         Json      @default("{}")
+  ownerId          String    @map("owner_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz()
+
+  owner   User                 @relation("OrgOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members OrganizationMember[]
+  projects Project[]
+
+  @@index([ownerId])
+  @@map("organizations")
+}
+
+enum OrgRole {
+  owner
+  admin
+  member
+
+  @@map("org_role")
+}
+
+model OrganizationMember {
+  id       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId    String   @map("org_id") @db.Uuid
+  userId   String   @map("user_id") @db.Uuid
+  role     OrgRole  @default(member)
+  joinedAt DateTime @default(now()) @map("joined_at") @db.Timestamptz()
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+// ============================================================
+// PROJECTS
+// ============================================================
+
+model Project {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId       String    @map("org_id") @db.Uuid
+  name        String    @db.VarChar(255)
+  slug        String    @db.VarChar(100)
+  baseUrl     String    @map("base_url") @db.VarChar(512)
+  description String?   @db.Text
+  settings    Json      @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
+
+  organization  Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members       ProjectMember[]
+  urlRules      AllowedUrlRule[]
+  threads       Thread[]
+  kanbanColumns KanbanColumn[]
+  tasks         Task[]
+
+  @@unique([orgId, slug])
+  @@index([orgId])
+  @@map("projects")
+}
+
+enum ProjectRole {
+  admin
+  member
+  viewer
+
+  @@map("project_role")
+}
+
+model ProjectMember {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      ProjectRole @default(member)
+  invitedBy String?  @map("invited_by") @db.Uuid
+  joinedAt  DateTime @default(now()) @map("joined_at") @db.Timestamptz()
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inviter User?   @relation("InvitedBy", fields: [invitedBy], references: [id])
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+// ============================================================
+// ALLOWED URL RULES
+// ============================================================
+
+model AllowedUrlRule {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  pattern   String   @db.VarChar(512)
+  ruleType  String   @default("glob") @map("rule_type") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("allowed_url_rules")
+}
+
+// ============================================================
+// THREADS
+// ============================================================
+
+enum ThreadStatus {
+  open
+  in_progress
+  resolved
+  closed
+
+  @@map("thread_status")
+}
+
+enum ThreadPriority {
+  low
+  medium
+  high
+  critical
+
+  @@map("thread_priority")
+}
+
+enum ThreadType {
+  general
+  bug
+  design
+  content
+
+  @@map("thread_type")
+}
+
+enum ContextType {
+  pin
+  panel
+
+  @@map("context_type")
+}
+
+enum ViewportType {
+  desktop
+  tablet
+  mobile
+
+  @@map("viewport_type")
+}
+
+model Thread {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId      String         @map("project_id") @db.Uuid
+  authorId       String?        @map("author_id") @db.Uuid
+  title          String         @db.VarChar(255)
+  message        String         @db.Text
+  pageUrl        String         @map("page_url") @db.VarChar(2048)
+  pageTitle      String?        @map("page_title") @db.VarChar(512)
+  status         ThreadStatus   @default(open)
+  priority       ThreadPriority @default(medium)
+  type           ThreadType     @default(general)
+  contextType    ContextType    @default(panel) @map("context_type")
+  viewport       ViewportType   @default(desktop)
+  xPct           Decimal?       @map("x_pct") @db.Decimal(7, 4)
+  yPct           Decimal?       @map("y_pct") @db.Decimal(7, 4)
+  anchorData     Json?          @map("anchor_data")
+  targetSelector String?        @map("target_selector") @db.VarChar(512)
+  screenshotUrl  String?        @map("screenshot_url") @db.VarChar(512)
+  createdVia     String         @default("overlay") @map("created_via") @db.VarChar(20)
+  resolvedAt     DateTime?      @map("resolved_at") @db.Timestamptz()
+  resolvedBy     String?        @map("resolved_by") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz()
+
+  project     Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author      User?              @relation("ThreadAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  resolver    User?              @relation("ThreadResolver", fields: [resolvedBy], references: [id])
+  environment ThreadEnvironment?
+  comments    Comment[]
+  tasks       Task[]
+
+  @@index([projectId])
+  @@index([projectId, status])
+  @@index([projectId, pageUrl])
+  @@index([authorId])
+  @@map("threads")
+}
+
+// ============================================================
+// THREAD ENVIRONMENT METADATA (1:1)
+// ============================================================
+
+model ThreadEnvironment {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  threadId         String   @unique @map("thread_id") @db.Uuid
+  browserName      String?  @map("browser_name") @db.VarChar(100)
+  browserVersion   String?  @map("browser_version") @db.VarChar(50)
+  osName           String?  @map("os_name") @db.VarChar(100)
+  osVersion        String?  @map("os_version") @db.VarChar(50)
+  viewportMode     String?  @map("viewport_mode") @db.VarChar(20)
+  viewportWidth    Int?     @map("viewport_width")
+  viewportHeight   Int?     @map("viewport_height")
+  devicePixelRatio Decimal? @map("device_pixel_ratio") @db.Decimal(4, 2)
+  userAgent        String?  @map("user_agent") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  thread Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@map("thread_environments")
+}
+
+// ============================================================
+// COMMENTS
+// ============================================================
+
+model Comment {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  threadId  String    @map("thread_id") @db.Uuid
+  authorId  String?   @map("author_id") @db.Uuid
+  content   String    @db.Text
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+
+  thread Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author User?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([threadId])
+  @@map("comments")
+}
+
+// ============================================================
+// MENTIONS (polymorphic)
+// ============================================================
+
+model Mention {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mentionableType String   @map("mentionable_type") @db.VarChar(20)
+  mentionableId   String   @map("mentionable_id") @db.Uuid
+  mentionedUserId String   @map("mentioned_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  mentionedUser User @relation(fields: [mentionedUserId], references: [id], onDelete: Cascade)
+
+  @@index([mentionableType, mentionableId])
+  @@map("mentions")
+}
+
+// ============================================================
+// ATTACHMENTS (polymorphic)
+// ============================================================
+
+model Attachment {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  attachableType String   @map("attachable_type") @db.VarChar(20)
+  attachableId   String   @map("attachable_id") @db.Uuid
+  uploadedBy     String   @map("uploaded_by") @db.Uuid
+  filename       String   @db.VarChar(255)
+  storageKey     String   @map("storage_key") @db.VarChar(512)
+  url            String   @db.VarChar(512)
+  mimeType       String   @map("mime_type") @db.VarChar(100)
+  sizeBytes      BigInt   @map("size_bytes")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  uploader User @relation(fields: [uploadedBy], references: [id])
+
+  @@index([attachableType, attachableId])
+  @@map("attachments")
+}
+
+// ============================================================
+// KANBAN COLUMNS
+// ============================================================
+
+model KanbanColumn {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  name      String   @db.VarChar(100)
+  position  Int      @default(0)
+  color     String?  @db.VarChar(7)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId])
+  @@map("kanban_columns")
+}
+
+// ============================================================
+// TASKS
+// ============================================================
+
+enum TaskStatus {
+  todo
+  in_progress
+  done
+  cancelled
+
+  @@map("task_status")
+}
+
+model Task {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId      String         @map("project_id") @db.Uuid
+  threadId       String?        @map("thread_id") @db.Uuid
+  kanbanColumnId String?        @map("kanban_column_id") @db.Uuid
+  title          String         @db.VarChar(255)
+  description    String?        @db.Text
+  status         TaskStatus     @default(todo)
+  priority       ThreadPriority @default(medium)
+  assigneeId     String?        @map("assignee_id") @db.Uuid
+  position       Int            @default(0)
+  dueDate        DateTime?      @map("due_date") @db.Date
+  createdBy      String         @map("created_by") @db.Uuid
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt      DateTime?      @map("deleted_at") @db.Timestamptz()
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  thread       Thread?       @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  kanbanColumn KanbanColumn? @relation(fields: [kanbanColumnId], references: [id], onDelete: SetNull)
+  assignee     User?         @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  creator      User          @relation("TaskCreator", fields: [createdBy], references: [id])
+  history      TaskHistory[]
+
+  @@index([projectId])
+  @@index([kanbanColumnId])
+  @@index([threadId])
+  @@index([assigneeId])
+  @@map("tasks")
+}
+
+// ============================================================
+// TASK HISTORY
+// ============================================================
+
+model TaskHistory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId    String   @map("task_id") @db.Uuid
+  changedBy String   @map("changed_by") @db.Uuid
+  field     String   @db.VarChar(50)
+  oldValue  String?  @map("old_value") @db.Text
+  newValue  String?  @map("new_value") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  task    Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  changer User @relation(fields: [changedBy], references: [id])
+
+  @@index([taskId])
+  @@map("task_history")
+}

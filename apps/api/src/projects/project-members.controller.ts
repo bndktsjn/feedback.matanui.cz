@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ProjectMembersService } from './project-members.service';
 import { AddProjectMemberDto, UpdateProjectMemberDto } from './dto';
 import { SessionGuard } from '../auth/guards/session.guard';
@@ -15,6 +15,14 @@ interface AuthenticatedUser {
 @UseGuards(SessionGuard, ProjectMemberGuard)
 export class ProjectMembersController {
   constructor(private readonly membersService: ProjectMembersService) {}
+
+  @Get('search')
+  async search(
+    @Param('projectId') projectId: string,
+    @Query('q') q?: string,
+  ): Promise<Record<string, unknown>[]> {
+    return this.membersService.search(projectId, q);
+  }
 
   @Get()
   async findAll(@Param('projectId') projectId: string): Promise<Record<string, unknown>[]> {

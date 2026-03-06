@@ -82,6 +82,7 @@ function ThreadItem({
         <AuthorMeta
           displayName={thread.author?.displayName}
           avatarUrl={thread.author?.avatarUrl}
+          guestEmail={thread.guestEmail}
           createdAt={thread.createdAt}
         />
 

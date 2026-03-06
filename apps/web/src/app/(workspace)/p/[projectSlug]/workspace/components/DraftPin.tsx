@@ -1,30 +1,35 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { clamp } from '../lib/utils';
-import { IconChat, IconSend } from './Icons';
+import { IconChat } from './Icons';
+import Composer from './Composer';
+import type { StagedFile } from './Composer';
 
 interface DraftPinProps {
   x: number;
   y: number;
+  projectId: string;
   overlayRect: DOMRect | null;
-  onSubmit: (message: string, x: number, y: number) => Promise<void>;
+  onSubmit: (message: string, x: number, y: number, files: StagedFile[], mentionIds: string[]) => Promise<void>;
   onCancel: () => void;
+  /** Area bounds — present when selecting a rectangle instead of a point */
+  area?: { x2: number; y2: number };
 }
 
-export default function DraftPin({ x: initX, y: initY, overlayRect, onSubmit, onCancel }: DraftPinProps) {
+export { type StagedFile };
+
+export default function DraftPin({ x: initX, y: initY, projectId, overlayRect, onSubmit, onCancel, area }: DraftPinProps) {
   const [pos, setPos] = useState({ x: initX, y: initY });
-  const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [shakeWarned, setShakeWarned] = useState(false);
   const [shaking, setShaking] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [hasContent, setHasContent] = useState(false);
   const dragState = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
-  const composerRef = useRef<HTMLDivElement>(null);
+  const composerWrapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
+  // Keep area in sync with initial props (it doesn't change after creation)
+  const areaRef = useRef(area);
 
   function onPinIconPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
@@ -53,20 +58,19 @@ export default function DraftPin({ x: initX, y: initY, overlayRect, onSubmit, on
     dragState.current = null;
   }
 
-  async function handleSubmit() {
-    if (!message.trim() || submitting) return;
+  const handleSubmit = useCallback(async (content: string, files: StagedFile[], mentionIds: string[]) => {
+    if (submitting) return;
     setSubmitting(true);
     try {
-      await onSubmit(message.trim(), pos.x, pos.y);
+      await onSubmit(content, pos.x, pos.y, files, mentionIds);
     } finally {
       setSubmitting(false);
     }
-  }
+  }, [onSubmit, pos.x, pos.y, submitting]);
 
   function handleOverlayClick(e: React.MouseEvent) {
-    // Clicks on the composer itself don't count as outside clicks
-    if (composerRef.current?.contains(e.target as Node)) return;
-    if (message.trim().length >= 4 && !shakeWarned) {
+    if (composerWrapRef.current?.contains(e.target as Node)) return;
+    if (hasContent && !shakeWarned) {
       setShakeWarned(true);
       setShaking(true);
       setTimeout(() => setShaking(false), 400);
@@ -78,10 +82,26 @@ export default function DraftPin({ x: initX, y: initY, overlayRect, onSubmit, on
   // Flip composer to left side when pin is near right edge
   const flipLeft = pos.x >= 70;
 
+  // For area mode, render a dashed rectangle
+  const areaStyle = areaRef.current ? {
+    left: `${Math.min(pos.x, areaRef.current.x2)}%`,
+    top: `${Math.min(pos.y, areaRef.current.y2)}%`,
+    width: `${Math.abs(areaRef.current.x2 - pos.x)}%`,
+    height: `${Math.abs(areaRef.current.y2 - pos.y)}%`,
+  } : null;
+
   return (
     <>
       {/* Invisible click-catcher for outside-click guard */}
       <div className="absolute inset-0 z-0" onClick={handleOverlayClick} />
+
+      {/* Area highlight rectangle (Figma-style) */}
+      {areaStyle && (
+        <div
+          className="absolute z-[5] border-2 border-dashed border-orange-400 bg-orange-400/10 pointer-events-none"
+          style={areaStyle}
+        />
+      )}
 
       {/* Pin marker — draggable */}
       <div
@@ -117,42 +137,28 @@ export default function DraftPin({ x: initX, y: initY, overlayRect, onSubmit, on
             className={`absolute top-0 z-20 ${flipLeft ? 'right-10' : 'left-10'}`}
             style={{ transform: 'translateY(-50%)' }}
           >
-          <div
-            ref={composerRef}
-            className={`w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-2xl ${shaking ? 'animate-shake' : ''}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <textarea
-              ref={textareaRef}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Describe the issue…"
-              rows={3}
-              className="w-full resize-none rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
-                if (e.key === 'Escape') { e.stopPropagation(); onCancel(); }
-              }}
-            />
-            <div className="mt-2 flex items-center justify-between">
+            <div
+              ref={composerWrapRef}
+              className={`w-72 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl ${shaking ? 'animate-shake' : ''}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Composer
+                placeholder="Describe the issue…"
+                projectId={projectId}
+                onSubmit={handleSubmit}
+                sending={submitting}
+                autoFocus
+                shortcutHint
+                onContentChange={setHasContent}
+              />
               <button
                 onClick={onCancel}
-                className="text-xs text-gray-500 hover:text-gray-700"
+                className="mt-1 px-1 text-[10px] text-gray-400 hover:text-gray-600"
                 type="button"
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!message.trim() || submitting}
-                className="flex items-center gap-1 rounded-full bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
-                type="button"
-              >
-                <IconSend />
-                {submitting ? 'Sending…' : 'Create'}
+                Cancel · Esc
               </button>
             </div>
-          </div>
           </div>
         </div>
       </div>

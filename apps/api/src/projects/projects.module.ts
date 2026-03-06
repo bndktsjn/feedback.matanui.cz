@@ -3,6 +3,7 @@ import { ProjectsService } from './projects.service';
 import { ProjectMembersService } from './project-members.service';
 import { UrlRulesService } from './url-rules.service';
 import { ProjectsController } from './projects.controller';
+import { PublicProjectsController } from './public-projects.controller';
 import { ProjectMembersController } from './project-members.controller';
 import { UrlRulesController } from './url-rules.controller';
 import { ProjectMemberGuard } from './guards/project-member.guard';
@@ -11,7 +12,7 @@ import { OrgsModule } from '../orgs/orgs.module';
 
 @Module({
   imports: [AuthModule, OrgsModule],
-  controllers: [ProjectsController, ProjectMembersController, UrlRulesController],
+  controllers: [ProjectsController, PublicProjectsController, ProjectMembersController, UrlRulesController],
   providers: [ProjectsService, ProjectMembersService, UrlRulesService, ProjectMemberGuard],
   exports: [ProjectsService, ProjectMembersService, ProjectMemberGuard],
 })

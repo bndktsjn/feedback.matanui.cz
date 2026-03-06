@@ -9,7 +9,7 @@ export class ThreadsService {
 
   async create(
     projectId: string,
-    authorId: string,
+    authorId: string | null,
     dto: CreateThreadDto,
   ): Promise<Record<string, unknown>> {
     const env = dto.environment;
@@ -17,6 +17,7 @@ export class ThreadsService {
       data: {
         projectId,
         authorId,
+        ...((!authorId && dto.guestEmail) ? { guestEmail: dto.guestEmail.toLowerCase() } : {}),
         title: dto.title,
         message: dto.message,
         pageUrl: dto.pageUrl,
@@ -86,7 +87,13 @@ export class ThreadsService {
         skip,
         take: perPage,
         orderBy: { updatedAt: 'desc' },
-        include: {
+        select: {
+          id: true, projectId: true, authorId: true, guestEmail: true,
+          title: true, message: true, pageUrl: true, pageTitle: true,
+          status: true, priority: true, type: true, contextType: true,
+          viewport: true, xPct: true, yPct: true, anchorData: true,
+          targetSelector: true, screenshotUrl: true, createdVia: true,
+          resolvedAt: true, resolvedBy: true, createdAt: true, updatedAt: true,
           author: { select: { id: true, email: true, displayName: true, avatarUrl: true } },
           environment: true,
           _count: { select: { comments: true } },
@@ -113,7 +120,9 @@ export class ThreadsService {
         comments: {
           where: { deletedAt: null },
           orderBy: { createdAt: 'asc' },
-          include: {
+          select: {
+            id: true, threadId: true, authorId: true, guestEmail: true,
+            content: true, createdAt: true, updatedAt: true,
             author: { select: { id: true, email: true, displayName: true, avatarUrl: true } },
           },
         },

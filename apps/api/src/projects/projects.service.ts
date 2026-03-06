@@ -85,6 +85,20 @@ export class ProjectsService {
     if (dto.baseUrl !== undefined) data.baseUrl = dto.baseUrl;
     if (dto.description !== undefined) data.description = dto.description;
 
+    // Merge settings flags into existing settings JSON
+    if (dto.publicWorkspace !== undefined || dto.allowAnonymousComments !== undefined) {
+      const existing = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { settings: true },
+      });
+      const currentSettings = (existing?.settings || {}) as Record<string, unknown>;
+      if (dto.publicWorkspace !== undefined) currentSettings.publicWorkspace = dto.publicWorkspace;
+      if (dto.allowAnonymousComments !== undefined) currentSettings.allowAnonymousComments = dto.allowAnonymousComments;
+      // If publicWorkspace is turned off, also disable anonymous comments
+      if (dto.publicWorkspace === false) currentSettings.allowAnonymousComments = false;
+      data.settings = currentSettings;
+    }
+
     return this.prisma.project.update({
       where: { id: projectId },
       data,
@@ -100,6 +114,31 @@ export class ProjectsService {
         updatedAt: true,
       },
     });
+  }
+
+  async findPublicBySlug(slug: string): Promise<Record<string, unknown>> {
+    const project = await this.prisma.project.findFirst({
+      where: { slug, deletedAt: null },
+      select: {
+        id: true,
+        orgId: true,
+        name: true,
+        slug: true,
+        baseUrl: true,
+        description: true,
+        settings: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    if (!project) throw new NotFoundException('Project not found');
+    const settings = (project.settings || {}) as Record<string, unknown>;
+    if (!settings.publicWorkspace) {
+      throw new NotFoundException('Project not found');
+    }
+    // Strip apiKey from public response
+    const { apiKey, ...publicSettings } = settings;
+    return { ...project, settings: publicSettings };
   }
 
   async softDelete(projectId: string): Promise<void> {

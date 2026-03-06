@@ -29,6 +29,7 @@ services:
     depends_on:
       - api
     environment:
+      API_HOST: api
       API_PORT: 3001
       NODE_ENV: development
     ports:
@@ -43,4 +44,4 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro,z

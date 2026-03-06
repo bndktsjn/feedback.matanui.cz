@@ -4,7 +4,8 @@ import { useState, useCallback } from 'react';
 import { Thread, Comment, User, threads as threadsApi, comments as commentsApi } from '@/lib/api';
 import AuthorMeta from './AuthorMeta';
 import MoreMenu, { MenuItem } from './MoreMenu';
-import { IconBack, IconCheck, IconSend, IconLink, IconTrash, IconInfo, IconPencil } from './Icons';
+import { IconBack, IconCheck, IconSend, IconLink, IconTrash, IconInfo, IconPencil, IconImage } from './Icons';
+import Composer from './Composer';
 import { copyToClipboard } from '../lib/utils';
 
 interface ThreadDetailProps {
@@ -48,10 +49,10 @@ export default function ThreadDetail({
     } catch { /* keep stale */ }
   }, [projectId, thread.id]);
 
-  async function postReply() {
-    if (!replyContent.trim() || replySending) return;
+  async function postReply(contentArg?: string) {
+    const content = (contentArg || replyContent).trim();
+    if (!content || replySending) return;
     setReplySending(true);
-    const content = replyContent.trim();
     
     // Optimistically add the comment immediately for live update
     const tempId = `optimistic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -183,6 +184,17 @@ export default function ThreadDetail({
             createdAt={thread.createdAt}
           />
           <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{thread.message}</p>
+          {/* Screenshot preview */}
+          {thread.screenshotUrl && (
+            <div className="mt-2 rounded-lg overflow-hidden border border-gray-200">
+              <img
+                src={thread.screenshotUrl}
+                alt="Screenshot"
+                className="w-full cursor-pointer hover:opacity-90 transition"
+                onClick={() => window.open(thread.screenshotUrl!, '_blank')}
+              />
+            </div>
+          )}
         </div>
 
         {/* Replies */}
@@ -246,25 +258,13 @@ export default function ThreadDetail({
 
       {/* Reply form */}
       <div className="shrink-0 border-t border-gray-100 px-3 py-2">
-        <div className="relative">
-          <textarea
-            value={replyContent}
-            onChange={(e) => setReplyContent(e.target.value)}
-            placeholder="Reply…"
-            rows={2}
-            className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) postReply();
-            }}
-          />
-          <button
-            onClick={postReply}
-            disabled={!replyContent.trim() || replySending}
-            className="absolute bottom-2.5 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white transition hover:bg-blue-700 disabled:opacity-30"
-          >
-            <IconSend />
-          </button>
-        </div>
+        <Composer
+          placeholder="Reply…"
+          projectId={projectId}
+          onSubmit={(content) => postReply(content)}
+          sending={replySending}
+          onContentChange={(has) => setReplyContent(has ? ' ' : '')}
+        />
       </div>
     </div>
   );

@@ -39,6 +39,19 @@ export class AuthService {
       select: this.userSelect(),
     });
 
+    // Link anonymous threads/comments created with this email to the new user
+    const emailLower = dto.email.toLowerCase();
+    await Promise.all([
+      this.prisma.thread.updateMany({
+        where: { guestEmail: emailLower, authorId: null },
+        data: { authorId: user.id, guestEmail: null },
+      }),
+      this.prisma.comment.updateMany({
+        where: { guestEmail: emailLower, authorId: null },
+        data: { authorId: user.id, guestEmail: null },
+      }),
+    ]);
+
     // TODO: Send verification email via nodemailer in Phase 1 email task
     return user;
   }

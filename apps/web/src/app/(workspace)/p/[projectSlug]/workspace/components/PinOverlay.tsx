@@ -5,7 +5,8 @@ import { Thread } from '@/lib/api';
 import { clamp, canonicalUrl } from '../lib/utils';
 import PinMarker from './PinMarker';
 import DraftPin from './DraftPin';
-import { DraftPin as DraftPinType, Viewport } from '../types';
+import type { StagedFile } from './Composer';
+import { DraftPin as DraftPinType, Viewport, SelectionMode } from '../types';
 
 interface PinOverlayProps {
   threads: Thread[];
@@ -17,7 +18,10 @@ interface PinOverlayProps {
   iframeRef: React.RefObject<HTMLIFrameElement | null>;
   currentPageUrl: string;
   viewport: Viewport;
+  projectId: string;
+  selectionMode: SelectionMode;
   onOverlayClick: (xPct: number, yPct: number) => void;
+  onAreaSelect: (x1: number, y1: number, x2: number, y2: number) => void;
   onPinHoverEnter: (thread: Thread) => void;
   onPinHoverLeave: (thread: Thread) => void;
   onPinClick: (thread: Thread) => void;
@@ -25,7 +29,7 @@ interface PinOverlayProps {
   onPinDragStart: (thread: Thread) => void;
   onPanelHide: () => void;
   onPanelRestore: () => void;
-  onDraftSubmit: (message: string, x: number, y: number) => Promise<void>;
+  onDraftSubmit: (message: string, x: number, y: number, files: StagedFile[], mentionIds: string[]) => Promise<void>;
   onDraftCancel: () => void;
 }
 
@@ -39,7 +43,10 @@ export default function PinOverlay({
   iframeRef,
   currentPageUrl,
   viewport,
+  projectId,
+  selectionMode,
   onOverlayClick,
+  onAreaSelect,
   onPinHoverEnter,
   onPinHoverLeave,
   onPinClick,
@@ -229,21 +236,66 @@ export default function PinOverlay({
     };
   }, [iframeRef]);
 
-  /* ── Click handler for pin placement ─────────────────────────── */
+  /* ── Area selection state ──────────────────────────────────────── */
+  const [areaStart, setAreaStart] = useState<{ x: number; y: number } | null>(null);
+  const [areaCurrent, setAreaCurrent] = useState<{ x: number; y: number } | null>(null);
+  const areaDrawing = useRef(false);
+
+  function getOverlayPct(e: React.MouseEvent) {
+    const rect = overlayRef.current!.getBoundingClientRect();
+    return {
+      x: clamp(((e.clientX - rect.left) / rect.width) * 100, 0, 100),
+      y: clamp(((e.clientY - rect.top) / rect.height) * 100, 0, 100),
+    };
+  }
+
+  /* ── Click / mousedown handler for pin placement or area start ── */
   const handleOverlayClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!pinMode) return;
       if (e.target !== overlayRef.current) return;
       if (draftPin) { onDraftCancel(); return; }
+      if (selectionMode === 'area') return; // area handled via mousedown
       const rect = overlayRef.current!.getBoundingClientRect();
-      // getBoundingClientRect() includes the translateY transform,
-      // so (clientY - rect.top) / rect.height gives document-relative %.
       const xPct = clamp(((e.clientX - rect.left) / rect.width) * 100, 0, 100);
       const yPct = clamp(((e.clientY - rect.top) / rect.height) * 100, 0, 100);
       onOverlayClick(xPct, yPct);
     },
-    [pinMode, draftPin, onOverlayClick, onDraftCancel]
+    [pinMode, draftPin, onOverlayClick, onDraftCancel, selectionMode]
   );
+
+  function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (!pinMode || selectionMode !== 'area' || draftPin) return;
+    if (e.target !== overlayRef.current) return;
+    e.preventDefault();
+    const pos = getOverlayPct(e);
+    setAreaStart(pos);
+    setAreaCurrent(pos);
+    areaDrawing.current = true;
+  }
+
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (!areaDrawing.current || !areaStart) return;
+    setAreaCurrent(getOverlayPct(e));
+  }
+
+  function handleMouseUp(e: React.MouseEvent<HTMLDivElement>) {
+    if (!areaDrawing.current || !areaStart) return;
+    areaDrawing.current = false;
+    const end = getOverlayPct(e);
+    setAreaStart(null);
+    setAreaCurrent(null);
+    // Minimum area threshold (prevent accidental tiny rectangles)
+    const w = Math.abs(end.x - areaStart.x);
+    const h = Math.abs(end.y - areaStart.y);
+    if (w < 1 && h < 1) return;
+    onAreaSelect(
+      Math.min(areaStart.x, end.x),
+      Math.min(areaStart.y, end.y),
+      Math.max(areaStart.x, end.x),
+      Math.max(areaStart.y, end.y),
+    );
+  }
 
   const overlayRect = overlayRef.current?.getBoundingClientRect() ?? null;
 
@@ -257,6 +309,18 @@ export default function PinOverlay({
     return threadUrl === currentPageUrl;
   });
 
+  // Parse area anchors for existing threads
+  const threadAreas = pinThreads
+    .filter((t) => t.anchorData)
+    .map((t) => {
+      try {
+        const anchor = typeof t.anchorData === 'string' ? JSON.parse(t.anchorData) : t.anchorData;
+        if (anchor?.type === 'area') return { thread: t, ...anchor };
+      } catch {}
+      return null;
+    })
+    .filter(Boolean) as { thread: typeof pinThreads[0]; x1: number; y1: number; x2: number; y2: number }[];
+
   return (
     <div
       ref={overlayRef}
@@ -265,10 +329,49 @@ export default function PinOverlay({
         width: '100%',
         height: docHeight > 0 ? docHeight : '100%',
         pointerEvents: (pinMode || panelHidden) ? 'auto' : 'none',
-        cursor: pinMode ? (draftPin ? 'default' : 'crosshair') : 'default',
+        cursor: pinMode ? (draftPin ? 'default' : (selectionMode === 'area' ? 'crosshair' : 'crosshair')) : 'default',
       }}
       onClick={handleOverlayClick}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
     >
+      {/* Area highlights for existing threads */}
+      {threadAreas.map(({ thread: t, x1, y1, x2, y2 }) => (
+        <div
+          key={`area-${t.id}`}
+          className={`absolute border-2 pointer-events-auto cursor-pointer transition ${
+            activeThreadId === t.id
+              ? 'border-blue-500 bg-blue-500/10'
+              : hoveredThreadId === t.id
+                ? 'border-blue-400 bg-blue-400/8'
+                : 'border-blue-300/50 bg-blue-300/5 hover:border-blue-400 hover:bg-blue-400/10'
+          }`}
+          style={{
+            left: `${x1}%`,
+            top: `${y1}%`,
+            width: `${x2 - x1}%`,
+            height: `${y2 - y1}%`,
+          }}
+          onClick={(e) => { e.stopPropagation(); onPinClick(t); }}
+          onMouseEnter={() => onPinHoverEnter(t)}
+          onMouseLeave={() => onPinHoverLeave(t)}
+        />
+      ))}
+
+      {/* Live area selection rectangle */}
+      {areaStart && areaCurrent && (
+        <div
+          className="absolute border-2 border-dashed border-orange-400 bg-orange-400/10 pointer-events-none z-[5]"
+          style={{
+            left: `${Math.min(areaStart.x, areaCurrent.x)}%`,
+            top: `${Math.min(areaStart.y, areaCurrent.y)}%`,
+            width: `${Math.abs(areaCurrent.x - areaStart.x)}%`,
+            height: `${Math.abs(areaCurrent.y - areaStart.y)}%`,
+          }}
+        />
+      )}
+
       {/* Existing pin markers */}
       {pinThreads.map((t) => (
         <PinMarker
@@ -292,9 +395,11 @@ export default function PinOverlay({
         <DraftPin
           x={draftPin.x}
           y={draftPin.y}
+          projectId={projectId}
           overlayRect={overlayRect}
           onSubmit={onDraftSubmit}
           onCancel={onDraftCancel}
+          area={draftPin.area}
         />
       )}
     </div>

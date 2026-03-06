@@ -351,7 +351,7 @@ export default function ThreadsPage() {
 
                   {/* Author */}
                   <div className="shrink-0">
-                    <Avatar user={thread.author} />
+                    <Avatar user={thread.author ?? undefined} />
                   </div>
                 </button>
               );
@@ -480,7 +480,7 @@ export default function ThreadsPage() {
                 {/* Author + message */}
                 <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-3">
                   <div className="flex items-center gap-2">
-                    <Avatar user={selectedThread.author} size="md" />
+                    <Avatar user={selectedThread.author ?? undefined} size="md" />
                     <div>
                       <p className="text-sm font-medium text-gray-900">{selectedThread.author?.displayName || 'Anonymous'}</p>
                       <p className="text-[10px] text-gray-400">{timeAgo(selectedThread.createdAt)}</p>
@@ -531,7 +531,7 @@ export default function ThreadsPage() {
                           <div key={c.id} className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
                             <div className="flex items-start justify-between gap-1">
                               <div className="flex items-center gap-2">
-                                <Avatar user={c.author} />
+                                <Avatar user={c.author ?? undefined} />
                                 <div>
                                   <p className="text-xs font-medium text-gray-900">{c.author?.displayName || 'Unknown'}</p>
                                   <p className="text-[10px] text-gray-400">{timeAgo(c.createdAt)}</p>

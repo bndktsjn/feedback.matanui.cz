@@ -67,6 +67,30 @@ export class ProjectMembersService {
     });
   }
 
+  async search(projectId: string, query?: string): Promise<Record<string, unknown>[]> {
+    const where: Record<string, unknown> = { projectId };
+    if (query && query.trim()) {
+      where.user = {
+        OR: [
+          { displayName: { contains: query.trim(), mode: 'insensitive' } },
+          { email: { contains: query.trim(), mode: 'insensitive' } },
+        ],
+        deletedAt: null,
+      };
+    }
+    const members = await this.prisma.projectMember.findMany({
+      where,
+      include: {
+        user: {
+          select: { id: true, email: true, displayName: true, avatarUrl: true },
+        },
+      },
+      take: 10,
+      orderBy: { joinedAt: 'asc' },
+    });
+    return members.map((m) => (m as { user: Record<string, unknown> }).user);
+  }
+
   async remove(projectId: string, memberId: string): Promise<void> {
     const member = await this.prisma.projectMember.findUnique({
       where: { id: memberId, projectId },

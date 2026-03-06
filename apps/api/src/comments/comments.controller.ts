@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto, UpdateCommentDto } from './dto';
@@ -6,23 +6,33 @@ import { SessionGuard } from '../auth/guards/session.guard';
 import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { ProjectMemberGuard } from '../projects/guards/project-member.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { OptionalAuth } from '../common/decorators/optional-auth.decorator';
 
 interface AuthenticatedUser {
   id: string;
 }
 
 @Controller('v1/projects/:projectId/threads/:threadId/comments')
+@OptionalAuth()
 @UseGuards(SessionGuard, ProjectMemberGuard)
 export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
 
   @Post()
-  @UseGuards(CsrfGuard)
   async create(
     @Param('threadId') threadId: string,
-    @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser | null,
+    @Req() req: Request,
     @Body() dto: CreateCommentDto,
   ): Promise<Record<string, unknown>> {
+    const isPublic = (req as Request & { isPublicAccess?: boolean }).isPublicAccess;
+    if (!user && isPublic) {
+      if (!dto.guestEmail) {
+        throw new BadRequestException('Email is required for anonymous comments');
+      }
+      return this.commentsService.create(threadId, null, dto);
+    }
+    if (!user) throw new BadRequestException('Not authenticated');
     return this.commentsService.create(threadId, user.id, dto);
   }
 

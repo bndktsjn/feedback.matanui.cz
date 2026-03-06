@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsEnum,
   IsNumber,
+  IsEmail,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -79,4 +80,9 @@ export class CreateThreadDto {
   @ValidateNested()
   @Type(() => ThreadEnvironmentDto)
   environment?: ThreadEnvironmentDto;
+
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(255)
+  guestEmail?: string;
 }

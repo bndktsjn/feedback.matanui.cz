@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MinLength, MaxLength, IsUrl } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MinLength, MaxLength, IsUrl } from 'class-validator';
 
 export class UpdateProjectDto {
   @IsOptional()
@@ -16,4 +16,12 @@ export class UpdateProjectDto {
   @IsString()
   @MaxLength(2000)
   description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  publicWorkspace?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  allowAnonymousComments?: boolean;
 }

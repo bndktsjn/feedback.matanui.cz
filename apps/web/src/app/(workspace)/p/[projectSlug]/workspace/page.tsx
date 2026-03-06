@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { threads as threadsApi, orgs, projects, auth, Thread, User } from '@/lib/api';
-import { ProjectInfo, Viewport, StatusFilter, ScopeFilter, ViewMode, DraftPin, StatusCounts } from './types';
+import { threads as threadsApi, orgs, projects, auth, Thread, User, ProjectSettings } from '@/lib/api';
+import { ProjectInfo, Viewport, StatusFilter, ScopeFilter, ViewMode, DraftPin, StatusCounts, SelectionMode } from './types';
+import type { StagedFile } from './components/Composer';
 import { canonicalUrl } from './lib/utils';
 import { getEnvironment } from './lib/environment';
+import { captureScreenshot, screenshotBlobToFile } from './lib/screenshot';
 import Toolbar from './components/Toolbar';
 import IframeViewer from './components/IframeViewer';
 import PinOverlay from './components/PinOverlay';
@@ -25,6 +27,12 @@ export default function WorkspacePage() {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [allowAnonymousComments, setAllowAnonymousComments] = useState(false);
+  const [guestEmail, setGuestEmail] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('wpf-guest-email') || '';
+    return '';
+  });
 
   const [panelOpen, setPanelOpen] = useState(true);
   const [panelHidden, setPanelHidden] = useState(false); // auto-hide during pin drag
@@ -57,6 +65,7 @@ export default function WorkspacePage() {
 
   // Draft pin
   const [draftPin, setDraftPin] = useState<DraftPin | null>(null);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>('pin');
 
   // Confirm dialog
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -188,16 +197,44 @@ export default function WorkspacePage() {
   /* ── Load project ───────────────────────────────────────────── */
   useEffect(() => {
     async function load() {
+      // Try authenticated access first
+      let authenticated = false;
       try {
         const [user, orgList] = await Promise.all([auth.me(), orgs.list()]);
         setCurrentUser(user);
+        authenticated = true;
         for (const org of orgList) {
           const projList = (await projects.list(org.id)) as unknown as ProjectInfo[];
           const found = projList.find((p) => p.slug === projectSlug);
-          if (found) { setProject(found); break; }
+          if (found) {
+            setProject(found);
+            // Check project settings for anonymous comments capability
+            try {
+              const detail = await projects.get(org.id, found.id) as { settings?: ProjectSettings };
+              if (detail.settings) {
+                setAllowAnonymousComments(!!detail.settings.allowAnonymousComments);
+              }
+            } catch { /* ignore */ }
+            break;
+          }
         }
-      } catch { /* redirect handled by layout */ }
-      finally { setLoading(false); }
+      } catch {
+        // Not authenticated — try public access
+      }
+
+      // If not authenticated, try public project lookup
+      if (!authenticated) {
+        try {
+          const pub = await projects.publicBySlug(projectSlug) as unknown as ProjectInfo & { settings?: ProjectSettings };
+          setProject(pub);
+          setIsAnonymous(true);
+          setAllowAnonymousComments(!!pub.settings?.allowAnonymousComments);
+        } catch {
+          // Project not found or not public
+        }
+      }
+
+      setLoading(false);
     }
     load();
   }, [projectSlug]);
@@ -328,10 +365,21 @@ export default function WorkspacePage() {
   }, []);
 
   /* ── Create thread ──────────────────────────────────────────── */
-  const handleCreateThread = useCallback(async (message: string, x: number, y: number) => {
+  const handleCreateThread = useCallback(async (message: string, x: number, y: number, files?: StagedFile[], mentionIds?: string[]) => {
     if (!project) return;
+
+    // Anonymous user must have email
+    if (isAnonymous && allowAnonymousComments && !guestEmail.trim()) {
+      showToast('Please enter your email first');
+      return;
+    }
+
+    // Determine context type based on draft pin area
+    const draft = draftPin;
+    const hasArea = draft?.area != null;
+
     const env = getEnvironment(viewport);
-    const threadData = {
+    const threadData: Record<string, unknown> = {
       title: message.slice(0, 60),
       message,
       pageUrl: currentPageUrl,
@@ -353,6 +401,23 @@ export default function WorkspacePage() {
         userAgent: env.userAgent,
       },
     };
+
+    // Area selection data (Figma-style rectangle)
+    if (hasArea && draft?.area) {
+      threadData.anchorData = JSON.stringify({
+        type: 'area',
+        x1: Math.round(x * 1e4) / 1e4,
+        y1: Math.round(y * 1e4) / 1e4,
+        x2: Math.round(draft.area.x2 * 1e4) / 1e4,
+        y2: Math.round(draft.area.y2 * 1e4) / 1e4,
+      });
+    }
+
+    // Add guest email for anonymous users
+    if (isAnonymous && guestEmail.trim()) {
+      threadData.guestEmail = guestEmail.trim().toLowerCase();
+      localStorage.setItem('wpf-guest-email', guestEmail.trim().toLowerCase());
+    }
     
     console.log('📝 Creating thread:', threadData);
     const created = await threadsApi.create(project.id, threadData);
@@ -362,19 +427,52 @@ export default function WorkspacePage() {
     showToast('Thread created');
     
     // Optimistically add the new thread to the list so the pin appears immediately
-    if (created && currentUser) {
+    if (created) {
       const optimisticThread: Thread = {
         ...created,
-        author: {
+        author: currentUser ? {
           id: currentUser.id,
           email: currentUser.email,
           displayName: currentUser.displayName,
           avatarUrl: currentUser.avatarUrl,
-        },
+        } : null,
+        guestEmail: isAnonymous ? guestEmail.trim().toLowerCase() : undefined,
         _count: { comments: 0 },
       };
       setThreadList((prev) => [optimisticThread, ...prev]);
       setStatusCnts((prev) => ({ ...prev, open: prev.open + 1 }));
+
+      // Upload staged files as attachments (fire-and-forget)
+      if (files && files.length > 0) {
+        import('@/lib/api').then(({ attachments: attachmentsApi }) => {
+          files.forEach(async (sf) => {
+            try {
+              await attachmentsApi.uploadFile(sf.file, 'thread', created.id);
+            } catch (err) {
+              console.error('Failed to upload attachment:', err);
+            }
+          });
+        });
+      }
+
+      // Auto-screenshot: capture iframe with pin marker, upload, PATCH thread (fire-and-forget)
+      if (iframeRef.current) {
+        const iframe = iframeRef.current;
+        captureScreenshot(iframe, threadData.xPct as number, threadData.yPct as number)
+          .then(async (blob) => {
+            if (!blob) return;
+            const file = screenshotBlobToFile(blob);
+            try {
+              const { attachments: attachmentsApi } = await import('@/lib/api');
+              const uploaded = await attachmentsApi.uploadFile(file, 'thread', created.id);
+              await threadsApi.update(project!.id, created.id, { screenshotUrl: uploaded.url });
+              console.log('📸 Screenshot attached to thread');
+              loadThreads(); // refresh to show screenshot
+            } catch (err) {
+              console.error('Screenshot upload failed:', err);
+            }
+          });
+      }
     }
     
     // Refresh in background to get full thread data
@@ -383,11 +481,12 @@ export default function WorkspacePage() {
     setViewMode('list');
     setActiveThread(null);
     if (!panelOpen) setPanelOpen(true);
-  }, [project, viewport, currentPageUrl, showToast, loadThreads, panelOpen, currentUser]);
+  }, [project, viewport, currentPageUrl, showToast, loadThreads, panelOpen, currentUser, isAnonymous, allowAnonymousComments, guestEmail, draftPin]);
 
   /* ── Toggle thread status ───────────────────────────────────── */
   const handleResolve = useCallback(async (thread: Thread) => {
     if (!project) return;
+    if (isAnonymous) { showToast('Sign in to manage threads'); return; }
     const newStatus = thread.status === 'resolved' ? 'open' : 'resolved';
     try {
       await threadsApi.update(project.id, thread.id, { status: newStatus });
@@ -397,10 +496,11 @@ export default function WorkspacePage() {
       if (activeThread?.id === thread.id) { setActiveThread(null); setViewMode('list'); }
       loadThreads();
     } catch { showToast('Failed to update status'); }
-  }, [project, showToast, loadThreads, activeThread, popoverThread]);
+  }, [project, showToast, loadThreads, activeThread, popoverThread, isAnonymous]);
 
   /* ── Delete thread ──────────────────────────────────────────── */
   const handleDelete = useCallback((thread: Thread) => {
+    if (isAnonymous) { showToast('Sign in to manage threads'); return; }
     setConfirm({
       message: 'Delete this thread and all its replies?',
       onConfirm: async () => {
@@ -415,7 +515,7 @@ export default function WorkspacePage() {
         } catch { showToast('Failed to delete thread'); }
       },
     });
-  }, [project, showToast, loadThreads, activeThread, popoverThread]);
+  }, [project, showToast, loadThreads, activeThread, popoverThread, isAnonymous]);
 
   /* ── Open thread detail ─────────────────────────────────────── */
   const openThreadDetail = useCallback(async (thread: Thread) => {
@@ -434,6 +534,7 @@ export default function WorkspacePage() {
   /* ── Pin drag ───────────────────────────────────────────────── */
   const handlePinDragEnd = useCallback(async (thread: Thread, xPct: number, yPct: number) => {
     if (!project) return;
+    if (isAnonymous) return; // Anonymous users can't reposition pins
     // Update position optimistically for immediate feedback
     setThreadList((prev) => 
       prev.map((t) => 
@@ -566,12 +667,37 @@ export default function WorkspacePage() {
         statusCounts={statusCnts}
         pinMode={pinMode}
         panelOpen={panelOpen}
+        selectionMode={selectionMode}
         onViewportChange={handleViewportChange}
         onScopeChange={setScopeFilter}
         onStatusChange={setStatusFilter}
         onPinModeToggle={() => { setPinMode((v) => !v); if (pinMode) setDraftPin(null); }}
         onPanelToggle={() => setPanelOpen((v) => !v)}
+        onSelectionModeChange={setSelectionMode}
       />
+
+      {/* ══════ Anonymous guest email bar ══════ */}
+      {isAnonymous && allowAnonymousComments && (
+        <div className="flex items-center gap-2 border-b border-gray-700 bg-gray-800 px-4 py-1.5">
+          <span className="text-xs text-gray-400 shrink-0">Your email:</span>
+          <input
+            type="email"
+            value={guestEmail}
+            onChange={(e) => {
+              setGuestEmail(e.target.value);
+              localStorage.setItem('wpf-guest-email', e.target.value);
+            }}
+            placeholder="you@example.com"
+            className="w-48 rounded border border-gray-600 bg-gray-700 px-2 py-0.5 text-xs text-white placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+          />
+          <span className="text-[10px] text-gray-500">Required to create threads &amp; comments</span>
+        </div>
+      )}
+      {isAnonymous && !allowAnonymousComments && (
+        <div className="flex items-center gap-2 border-b border-gray-700 bg-gray-800 px-4 py-1.5">
+          <span className="text-xs text-gray-400">Viewing as guest — commenting is disabled</span>
+        </div>
+      )}
 
       {/* ══════ Main content ══════ */}
       <div className="relative flex-1 overflow-hidden">
@@ -595,11 +721,27 @@ export default function WorkspacePage() {
           iframeRef={iframeRef}
           currentPageUrl={currentPageUrl}
           viewport={viewport}
+          projectId={project.id}
+          selectionMode={selectionMode}
           onOverlayClick={(x, y) => {
+            // Anonymous users without commenting can only view
+            if (isAnonymous && !allowAnonymousComments) {
+              showToast('Commenting is not enabled for guests');
+              return;
+            }
             // 2.4: Close current thread/popover when clicking to place new pin
             if (popoverThread) { setPopoverThread(null); setPopoverPinRect(null); }
             if (activeThread) { setActiveThread(null); setViewMode('list'); }
             setDraftPin({ x, y });
+          }}
+          onAreaSelect={(x1, y1, x2, y2) => {
+            if (isAnonymous && !allowAnonymousComments) {
+              showToast('Commenting is not enabled for guests');
+              return;
+            }
+            if (popoverThread) { setPopoverThread(null); setPopoverPinRect(null); }
+            if (activeThread) { setActiveThread(null); setViewMode('list'); }
+            setDraftPin({ x: x1, y: y1, area: { x2, y2 } });
           }}
           onPinHoverEnter={handlePinHoverEnter}
           onPinHoverLeave={handlePinHoverLeave}
@@ -666,6 +808,8 @@ export default function WorkspacePage() {
           pinRect={popoverPinRect}
           panelOpen={effectivePanelOpen}
           currentUser={currentUser}
+          isAnonymous={isAnonymous}
+          guestEmail={guestEmail}
           onClose={() => { setPopoverThread(null); setPopoverPinRect(null); }}
           onResolve={handleResolve}
           onDelete={handleDelete}

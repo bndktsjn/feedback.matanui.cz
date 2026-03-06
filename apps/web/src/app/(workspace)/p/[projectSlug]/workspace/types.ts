@@ -9,11 +9,20 @@ export interface ProjectInfo {
   slug: string;
   baseUrl: string;
   orgId: string;
+  settings?: {
+    publicWorkspace?: boolean;
+    allowAnonymousComments?: boolean;
+    apiKey?: string;
+  };
 }
+
+export type SelectionMode = 'pin' | 'area';
 
 export interface DraftPin {
   x: number;
   y: number;
+  /** Area selection bounds (Figma-style rectangle) — present when mode='area' */
+  area?: { x2: number; y2: number };
 }
 
 export interface StatusCounts {

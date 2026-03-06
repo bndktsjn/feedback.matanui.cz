@@ -1,19 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/api';
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Try to authenticate but don't redirect — workspace may be public
     auth
       .me()
       .then(() => setLoading(false))
-      .catch(() => router.push('/login'));
-  }, [router]);
+      .catch(() => setLoading(false));
+  }, []);
 
   if (loading) {
     return (

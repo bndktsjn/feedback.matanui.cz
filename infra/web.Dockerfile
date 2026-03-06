@@ -15,6 +15,8 @@ FROM deps AS build
 COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG API_HOST=api
+ENV API_HOST=${API_HOST}
 RUN pnpm --filter @feedback/web run build
 
 # Production

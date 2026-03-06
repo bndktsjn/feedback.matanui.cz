@@ -8,7 +8,7 @@ export class CommentsService {
 
   async create(
     threadId: string,
-    authorId: string,
+    authorId: string | null,
     dto: CreateCommentDto,
   ): Promise<Record<string, unknown>> {
     const thread = await this.prisma.thread.findUnique({
@@ -20,6 +20,7 @@ export class CommentsService {
       data: {
         threadId,
         authorId,
+        ...((!authorId && dto.guestEmail) ? { guestEmail: dto.guestEmail.toLowerCase() } : {}),
         content: dto.content,
       },
       include: {

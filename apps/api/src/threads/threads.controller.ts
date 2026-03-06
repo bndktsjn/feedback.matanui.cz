@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -18,23 +19,33 @@ import { SessionGuard } from '../auth/guards/session.guard';
 import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { ProjectMemberGuard } from '../projects/guards/project-member.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { OptionalAuth } from '../common/decorators/optional-auth.decorator';
 
 interface AuthenticatedUser {
   id: string;
 }
 
 @Controller('v1/projects/:projectId/threads')
+@OptionalAuth()
 @UseGuards(SessionGuard, ProjectMemberGuard)
 export class ThreadsController {
   constructor(private readonly threadsService: ThreadsService) {}
 
   @Post()
-  @UseGuards(CsrfGuard)
   async create(
     @Param('projectId') projectId: string,
-    @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser | null,
+    @Req() req: Request,
     @Body() dto: CreateThreadDto,
   ): Promise<Record<string, unknown>> {
+    const isPublic = (req as Request & { isPublicAccess?: boolean }).isPublicAccess;
+    if (!user && isPublic) {
+      if (!dto.guestEmail) {
+        throw new BadRequestException('Email is required for anonymous feedback');
+      }
+      return this.threadsService.create(projectId, null, dto);
+    }
+    if (!user) throw new BadRequestException('Not authenticated');
     return this.threadsService.create(projectId, user.id, dto);
   }
 

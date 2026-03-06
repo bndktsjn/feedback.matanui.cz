@@ -10,6 +10,12 @@ import { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 
+interface ProjectSettings {
+  apiKey?: string;
+  publicWorkspace?: boolean;
+  allowAnonymousComments?: boolean;
+}
+
 @Injectable()
 export class ProjectMemberGuard implements CanActivate {
   constructor(
@@ -19,8 +25,7 @@ export class ProjectMemberGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const user = (request as Request & { user?: { id: string } }).user;
-    if (!user) throw new ForbiddenException('Not authenticated');
+    const user = (request as Request & { user?: { id: string } | null }).user;
 
     const projectId = request.params.projectId;
     if (!projectId) throw new ForbiddenException('Missing projectId parameter');
@@ -31,6 +36,32 @@ export class ProjectMemberGuard implements CanActivate {
     });
     if (!project || project.organization.deletedAt) {
       throw new NotFoundException('Project not found');
+    }
+
+    const settings = (project.settings || {}) as ProjectSettings;
+
+    // Anonymous access: check project public settings
+    if (!user) {
+      if (!settings.publicWorkspace) {
+        throw new ForbiddenException('Not authenticated');
+      }
+
+      const method = request.method.toUpperCase();
+      const isWrite = method === 'POST' || method === 'PATCH' || method === 'PUT' || method === 'DELETE';
+
+      if (isWrite && !settings.allowAnonymousComments) {
+        throw new ForbiddenException('Anonymous commenting is not enabled for this project');
+      }
+
+      // PATCH/DELETE not allowed for anonymous users (only POST for creating)
+      if (method === 'PATCH' || method === 'DELETE') {
+        throw new ForbiddenException('Anonymous users cannot edit or delete');
+      }
+
+      (request as Request & { project: typeof project }).project = project;
+      (request as Request & { isPublicAccess: boolean }).isPublicAccess = true;
+      (request as Request & { projectRole: string }).projectRole = 'viewer';
+      return true;
     }
 
     // Check project membership first

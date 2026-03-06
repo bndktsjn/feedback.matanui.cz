@@ -134,7 +134,7 @@ export const projects = {
   update: (
     orgId: string,
     projectId: string,
-    data: { name?: string; baseUrl?: string; description?: string },
+    data: { name?: string; baseUrl?: string; description?: string; publicWorkspace?: boolean; allowAnonymousComments?: boolean },
   ) =>
     apiFetch(`/orgs/${orgId}/projects/${projectId}`, {
       method: 'PATCH',
@@ -142,6 +142,8 @@ export const projects = {
     }),
   delete: (orgId: string, projectId: string) =>
     apiFetch(`/orgs/${orgId}/projects/${projectId}`, { method: 'DELETE' }),
+  publicBySlug: (slug: string) =>
+    apiFetch<Project>(`/public/projects/by-slug/${slug}`),
 };
 
 // Threads
@@ -167,11 +169,81 @@ export const threads = {
   },
 };
 
+// Attachments
+export const attachments = {
+  presign: (data: { attachableType: string; attachableId: string; filename: string; mimeType: string }) =>
+    apiFetch<{ uploadUrl: string; publicUrl: string; storageKey: string }>('/attachments/presign', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  confirm: (data: {
+    attachableType: string;
+    attachableId: string;
+    filename: string;
+    storageKey: string;
+    url: string;
+    mimeType: string;
+    sizeBytes: number;
+  }) =>
+    apiFetch<AttachmentInfo>('/attachments/confirm', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  list: (attachableType: string, attachableId: string) =>
+    apiFetch<AttachmentInfo[]>(`/attachments?attachableType=${attachableType}&attachableId=${attachableId}`),
+  delete: (id: string) =>
+    apiFetch(`/attachments/${id}`, { method: 'DELETE' }),
+  /** High-level helper: presign → PUT to S3 → confirm. Returns the created attachment. */
+  async uploadFile(
+    file: File,
+    attachableType: string,
+    attachableId: string,
+    onProgress?: (pct: number) => void,
+  ): Promise<AttachmentInfo> {
+    const { uploadUrl, publicUrl, storageKey } = await this.presign({
+      attachableType,
+      attachableId,
+      filename: file.name,
+      mimeType: file.type,
+    });
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', uploadUrl);
+      xhr.setRequestHeader('Content-Type', file.type);
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+        };
+      }
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('Upload failed')));
+      xhr.onerror = () => reject(new Error('Upload failed'));
+      xhr.send(file);
+    });
+    return this.confirm({
+      attachableType,
+      attachableId,
+      filename: file.name,
+      storageKey,
+      url: publicUrl,
+      mimeType: file.type,
+      sizeBytes: file.size,
+    }) as Promise<AttachmentInfo>;
+  },
+};
+
+// User search (for @mentions)
+export const users = {
+  search: (projectId: string, query?: string) => {
+    const qs = query ? `?q=${encodeURIComponent(query)}` : '';
+    return apiFetch<ProjectMemberUser[]>(`/projects/${projectId}/members/search${qs}`);
+  },
+};
+
 // Comments
 export const comments = {
   list: (projectId: string, threadId: string) =>
     apiFetch(`/projects/${projectId}/threads/${threadId}/comments`),
-  create: (projectId: string, threadId: string, data: { content: string }) =>
+  create: (projectId: string, threadId: string, data: { content: string; guestEmail?: string }) =>
     apiFetch(`/projects/${projectId}/threads/${threadId}/comments`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -284,7 +356,10 @@ export interface Thread {
   xPct: number | null;
   yPct: number | null;
   screenshotUrl: string | null;
-  author: { id: string; email: string; displayName: string; avatarUrl: string | null };
+  anchorData?: string | null;
+  targetSelector?: string | null;
+  guestEmail?: string | null;
+  author: { id: string; email: string; displayName: string; avatarUrl: string | null } | null;
   comments?: Comment[];
   environment?: Record<string, unknown> | null;
   _count: { comments: number };
@@ -295,7 +370,43 @@ export interface Thread {
 export interface Comment {
   id: string;
   content: string;
-  author: { id: string; email: string; displayName: string; avatarUrl: string | null };
+  guestEmail?: string | null;
+  author: { id: string; email: string; displayName: string; avatarUrl: string | null } | null;
+  attachments?: AttachmentInfo[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AttachmentInfo {
+  id: string;
+  filename: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface ProjectMemberUser {
+  id: string;
+  email: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+export interface ProjectSettings {
+  apiKey?: string;
+  publicWorkspace?: boolean;
+  allowAnonymousComments?: boolean;
+}
+
+export interface Project {
+  id: string;
+  orgId: string;
+  name: string;
+  slug: string;
+  baseUrl: string;
+  description?: string;
+  settings: ProjectSettings;
   createdAt: string;
   updatedAt: string;
 }

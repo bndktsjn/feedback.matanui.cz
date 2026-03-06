@@ -282,6 +282,7 @@ model Thread {
   anchorData     Json?          @map("anchor_data")
   targetSelector String?        @map("target_selector") @db.VarChar(512)
   screenshotUrl  String?        @map("screenshot_url") @db.VarChar(512)
+  guestEmail     String?        @map("guest_email") @db.VarChar(255)
   createdVia     String         @default("overlay") @map("created_via") @db.VarChar(20)
   resolvedAt     DateTime?      @map("resolved_at") @db.Timestamptz()
   resolvedBy     String?        @map("resolved_by") @db.Uuid
@@ -331,10 +332,11 @@ model ThreadEnvironment {
 // ============================================================
 
 model Comment {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  threadId  String    @map("thread_id") @db.Uuid
-  authorId  String?   @map("author_id") @db.Uuid
-  content   String    @db.Text
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  threadId   String    @map("thread_id") @db.Uuid
+  authorId   String?   @map("author_id") @db.Uuid
+  guestEmail String?   @map("guest_email") @db.VarChar(255)
+  content    String    @db.Text
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz()

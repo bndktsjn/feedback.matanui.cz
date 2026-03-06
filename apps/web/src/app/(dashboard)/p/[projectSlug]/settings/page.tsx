@@ -11,7 +11,7 @@ interface ProjectDetail {
   slug: string;
   baseUrl: string;
   description?: string;
-  settings: { apiKey?: string };
+  settings: { apiKey?: string; publicWorkspace?: boolean; allowAnonymousComments?: boolean };
 }
 
 type ToastType = { message: string; type: 'success' | 'error' };
@@ -32,6 +32,11 @@ export default function ProjectSettingsPage() {
   const [editBaseUrl, setEditBaseUrl] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Workspace settings
+  const [publicWorkspace, setPublicWorkspace] = useState(false);
+  const [allowAnonymousComments, setAllowAnonymousComments] = useState(false);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
 
   // Delete
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -56,6 +61,8 @@ export default function ProjectSettingsPage() {
             setEditName(detail.name);
             setEditBaseUrl(detail.baseUrl);
             setEditDescription(detail.description || '');
+            setPublicWorkspace(!!detail.settings?.publicWorkspace);
+            setAllowAnonymousComments(!!detail.settings?.allowAnonymousComments);
             break;
           }
         }
@@ -262,6 +269,84 @@ export default function ProjectSettingsPage() {
           ) : (
             <p className="mt-3 text-sm text-gray-400">No API key available for embed code.</p>
           )}
+        </div>
+      </section>
+
+      {/* ── Workspace Access ── */}
+      <section className="rounded-lg border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Workspace Access</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Control who can view and interact with the feedback workspace.
+          </p>
+        </div>
+        <div className="space-y-4 p-6">
+          <label className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              checked={publicWorkspace}
+              onChange={async (e) => {
+                const val = e.target.checked;
+                setPublicWorkspace(val);
+                if (!val) setAllowAnonymousComments(false);
+                setSavingWorkspace(true);
+                try {
+                  const updated = (await projects.update(orgId!, project.id, {
+                    publicWorkspace: val,
+                    ...(!val ? { allowAnonymousComments: false } : {}),
+                  })) as ProjectDetail;
+                  setProject(updated);
+                  showToastMsg(val ? 'Public workspace enabled' : 'Public workspace disabled', 'success');
+                } catch (err) {
+                  setPublicWorkspace(!val);
+                  showToastMsg(getErrorMessage(err), 'error');
+                } finally {
+                  setSavingWorkspace(false);
+                }
+              }}
+              disabled={savingWorkspace}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <span className="text-sm font-medium text-gray-900">Public workspace</span>
+              <p className="text-sm text-gray-500">
+                Allow anyone to view the workspace and browse threads/comments without logging in.
+              </p>
+            </div>
+          </label>
+
+          <label className={`flex items-start gap-3 ${!publicWorkspace ? 'opacity-50' : ''}`}>
+            <input
+              type="checkbox"
+              checked={allowAnonymousComments}
+              onChange={async (e) => {
+                const val = e.target.checked;
+                setAllowAnonymousComments(val);
+                setSavingWorkspace(true);
+                try {
+                  const updated = (await projects.update(orgId!, project.id, {
+                    allowAnonymousComments: val,
+                  })) as ProjectDetail;
+                  setProject(updated);
+                  showToastMsg(val ? 'Anonymous commenting enabled' : 'Anonymous commenting disabled', 'success');
+                } catch (err) {
+                  setAllowAnonymousComments(!val);
+                  showToastMsg(getErrorMessage(err), 'error');
+                } finally {
+                  setSavingWorkspace(false);
+                }
+              }}
+              disabled={savingWorkspace || !publicWorkspace}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <span className="text-sm font-medium text-gray-900">Allow anonymous comments</span>
+              <p className="text-sm text-gray-500">
+                Let visitors create threads and comments without an account. They must provide an email address.
+                If they later register with that email, their content will be linked to their account.
+              </p>
+            </div>
+          </label>
         </div>
       </section>
 

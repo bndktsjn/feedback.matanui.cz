@@ -35,8 +35,6 @@ interface ComposerProps {
   alwaysShowActions?: boolean;
   /** Auto-focus on mount */
   autoFocus?: boolean;
-  /** Keyboard shortcut hint shown below */
-  shortcutHint?: boolean;
   /** External ref for imperative control */
   composerRef?: React.Ref<ComposerHandle>;
   /** Callback when content changes (for parent shake-guard etc.) */
@@ -53,7 +51,6 @@ export default function Composer({
   sending = false,
   alwaysShowActions = false,
   autoFocus = false,
-  shortcutHint = false,
   composerRef,
   onContentChange,
 }: ComposerProps) {
@@ -73,7 +70,7 @@ export default function Composer({
   const mentionTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const hasContent = content.trim().length > 0 || stagedFiles.length > 0;
-  const showActions = alwaysShowActions || hasContent || focused;
+  const showActions = alwaysShowActions || hasContent;
 
   // Notify parent of content changes
   useEffect(() => {
@@ -152,18 +149,27 @@ export default function Composer({
     return () => clearTimeout(mentionTimer.current);
   }, [mentionQuery, projectId]);
 
-  function insertMention(user: ProjectMemberUser) {
+  function insertMention(user: ProjectMemberUser | { type: 'guest'; email: string }) {
     const ta = textareaRef.current;
     if (!ta) return;
     const cursorPos = ta.selectionStart;
     const before = content.slice(0, cursorPos);
     const atIdx = before.lastIndexOf('@');
     if (atIdx === -1) return;
-    const mentionText = `@[${user.displayName}](${user.id})`;
+    let mentionText: string;
+    let mentionId: string;
+    if ('type' in user && user.type === 'guest') {
+      mentionText = `@[Guest](${user.email})`;
+      mentionId = user.email;
+    } else {
+      const u = user as ProjectMemberUser;
+      mentionText = `@[${u.displayName}](${u.id})`;
+      mentionId = u.id;
+    }
     const newContent = content.slice(0, atIdx) + mentionText + ' ' + content.slice(cursorPos);
     setContent(newContent);
     setMentionQuery(null);
-    setMentionIds((prev) => prev.includes(user.id) ? prev : [...prev, user.id]);
+    setMentionIds((prev) => prev.includes(mentionId) ? prev : [...prev, mentionId]);
     // Set cursor after mention
     requestAnimationFrame(() => {
       const newPos = atIdx + mentionText.length + 1;
@@ -287,9 +293,57 @@ export default function Composer({
         </button>
       </div>
 
-      {/* Staged file chips */}
+      {/* Action row: @ + paperclip — visible when user has typed content */}
+      <div
+        className={`flex items-center gap-0.5 border-t border-gray-100 px-1.5 overflow-hidden transition-all duration-150 ease-in-out ${
+          showActions ? 'max-h-8 py-0.5 opacity-100' : 'max-h-0 py-0 opacity-0 border-t-transparent'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            const ta = textareaRef.current;
+            if (!ta) return;
+            ta.focus();
+            const pos = ta.selectionStart;
+            const before = content.slice(0, pos);
+            const prefix = before.length && !/\s$/.test(before) ? ' @' : '@';
+            const newVal = content.slice(0, pos) + prefix + content.slice(pos);
+            setContent(newVal);
+            requestAnimationFrame(() => {
+              const newPos = pos + prefix.length;
+              ta.setSelectionRange(newPos, newPos);
+              detectMention(newVal, newPos);
+            });
+          }}
+          className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          title="Mention someone"
+        >
+          <IconAt />
+        </button>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          title="Attach file"
+        >
+          <IconPaperclip />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) addFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+      </div>
+
+      {/* Staged file chips — below actions, outside text area */}
       {stagedFiles.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-2.5 pb-1">
+        <div className="flex flex-wrap gap-1 border-t border-gray-100 px-2.5 py-1.5">
           {stagedFiles.map((sf, i) => (
             <span
               key={i}
@@ -316,55 +370,6 @@ export default function Composer({
         </div>
       )}
 
-      {/* Action row: @ + paperclip — visible when focused or has content */}
-      {showActions && (
-        <div className="flex items-center gap-0.5 border-t border-gray-100 px-1.5 py-0.5">
-          <button
-            type="button"
-            onClick={() => {
-              const ta = textareaRef.current;
-              if (!ta) return;
-              ta.focus();
-              const pos = ta.selectionStart;
-              const before = content.slice(0, pos);
-              const prefix = before.length && !/\s$/.test(before) ? ' @' : '@';
-              const newVal = content.slice(0, pos) + prefix + content.slice(pos);
-              setContent(newVal);
-              requestAnimationFrame(() => {
-                const newPos = pos + prefix.length;
-                ta.setSelectionRange(newPos, newPos);
-                detectMention(newVal, newPos);
-              });
-            }}
-            className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-            title="Mention someone"
-          >
-            <IconAt />
-          </button>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-            title="Attach file"
-          >
-            <IconPaperclip />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files) addFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
-          {shortcutHint && (
-            <span className="ml-auto text-[10px] text-gray-300">⌘+Enter to send</span>
-          )}
-        </div>
-      )}
-
       {/* Mention autocomplete popup */}
       {mentionPos && mentionQuery !== null && (
         typeof document !== 'undefined' ? createPortal(
@@ -378,25 +383,43 @@ export default function Composer({
             {!mentionLoading && mentionResults.length === 0 && (
               <div className="px-3 py-2 text-xs text-gray-400">No users found</div>
             )}
-            {!mentionLoading && mentionResults.map((u, i) => (
-              <button
-                key={u.id}
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); insertMention(u); }}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition ${
-                  i === mentionIdx ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {u.avatarUrl ? (
-                  <img src={u.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
-                ) : (
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[10px] font-medium text-gray-500">
-                    {(u.displayName || u.email)[0]?.toUpperCase()}
+            {!mentionLoading && (
+              <>
+                {/* Guest option */}
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); insertMention({ type: 'guest', email: 'guest' }); }}
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition ${
+                    mentionIdx === 0 && mentionResults.length === 0 ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[10px] font-medium text-gray-500">
+                    G
                   </div>
-                )}
-                <span className="truncate">{u.displayName || u.email}</span>
-              </button>
-            ))}
+                  <span className="truncate">Guest (anyone)</span>
+                </button>
+                {/* Project members */}
+                {mentionResults.map((u, i) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); insertMention(u); }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition ${
+                      i === mentionIdx ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {u.avatarUrl ? (
+                      <img src={u.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
+                    ) : (
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[10px] font-medium text-gray-500">
+                        {(u.displayName || u.email)[0]?.toUpperCase()}
+                      </div>
+                    )}
+                    <span className="truncate">{u.displayName || u.email}</span>
+                  </button>
+                ))}
+              </>
+            )}
           </div>,
           document.body
         ) : null

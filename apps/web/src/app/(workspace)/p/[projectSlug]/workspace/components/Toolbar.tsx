@@ -1,7 +1,7 @@
 'use client';
 
-import { Viewport, StatusFilter, ScopeFilter, StatusCounts, SelectionMode } from '../types';
-import { IconDesktop, IconTablet, IconMobile, IconMousePointerClick, IconChevronRight, IconChevronLeft, IconCrosshair, IconSquare } from './Icons';
+import { Viewport, StatusFilter, ScopeFilter, StatusCounts } from '../types';
+import { IconDesktop, IconTablet, IconMobile, IconMousePointerClick, IconChevronRight, IconChevronLeft } from './Icons';
 
 const VP_ICONS: Record<Viewport, () => React.JSX.Element> = {
   desktop: IconDesktop,
@@ -18,13 +18,11 @@ interface ToolbarProps {
   statusCounts: StatusCounts;
   pinMode: boolean;
   panelOpen: boolean;
-  selectionMode: SelectionMode;
   onViewportChange: (vp: Viewport) => void;
   onScopeChange: (s: ScopeFilter) => void;
   onStatusChange: (s: StatusFilter) => void;
   onPinModeToggle: () => void;
   onPanelToggle: () => void;
-  onSelectionModeChange: (m: SelectionMode) => void;
 }
 
 export default function Toolbar({
@@ -36,13 +34,11 @@ export default function Toolbar({
   statusCounts,
   pinMode,
   panelOpen,
-  selectionMode,
   onViewportChange,
   onScopeChange,
   onStatusChange,
   onPinModeToggle,
   onPanelToggle,
-  onSelectionModeChange,
 }: ToolbarProps) {
   return (
     <div className="relative flex h-11 shrink-0 items-center gap-2 border-b border-gray-700 bg-gray-800 px-3">
@@ -107,32 +103,6 @@ export default function Toolbar({
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-      {/* Selection mode: Pin / Area — shown in comment mode */}
-      {pinMode && (
-        <div className="flex rounded-md bg-gray-700/60">
-          <button
-            onClick={() => onSelectionModeChange('pin')}
-            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition ${
-              selectionMode === 'pin' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-            title="Point pin"
-          >
-            <IconCrosshair />
-            <span className="hidden sm:inline">Pin</span>
-          </button>
-          <button
-            onClick={() => onSelectionModeChange('area')}
-            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition ${
-              selectionMode === 'area' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-            title="Area selection (Figma-style)"
-          >
-            <IconSquare />
-            <span className="hidden sm:inline">Area</span>
-          </button>
-        </div>
-      )}
-
       {/* Interact mode toggle */}
       <button
         onClick={onPinModeToggle}

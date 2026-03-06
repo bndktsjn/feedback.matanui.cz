@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { threads as threadsApi, orgs, projects, auth, Thread, User, ProjectSettings } from '@/lib/api';
-import { ProjectInfo, Viewport, StatusFilter, ScopeFilter, ViewMode, DraftPin, StatusCounts, SelectionMode } from './types';
+import { ProjectInfo, Viewport, StatusFilter, ScopeFilter, ViewMode, DraftPin, StatusCounts } from './types';
 import type { StagedFile } from './components/Composer';
 import { canonicalUrl } from './lib/utils';
 import { getEnvironment } from './lib/environment';
@@ -65,7 +65,6 @@ export default function WorkspacePage() {
 
   // Draft pin
   const [draftPin, setDraftPin] = useState<DraftPin | null>(null);
-  const [selectionMode, setSelectionMode] = useState<SelectionMode>('pin');
 
   // Confirm dialog
   const [confirm, setConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -667,13 +666,11 @@ export default function WorkspacePage() {
         statusCounts={statusCnts}
         pinMode={pinMode}
         panelOpen={panelOpen}
-        selectionMode={selectionMode}
         onViewportChange={handleViewportChange}
         onScopeChange={setScopeFilter}
         onStatusChange={setStatusFilter}
         onPinModeToggle={() => { setPinMode((v) => !v); if (pinMode) setDraftPin(null); }}
         onPanelToggle={() => setPanelOpen((v) => !v)}
-        onSelectionModeChange={setSelectionMode}
       />
 
       {/* ══════ Anonymous guest email bar ══════ */}
@@ -722,7 +719,6 @@ export default function WorkspacePage() {
           currentPageUrl={currentPageUrl}
           viewport={viewport}
           projectId={project.id}
-          selectionMode={selectionMode}
           onOverlayClick={(x, y) => {
             // Anonymous users without commenting can only view
             if (isAnonymous && !allowAnonymousComments) {

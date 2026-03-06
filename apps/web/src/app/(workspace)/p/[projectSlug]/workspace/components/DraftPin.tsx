@@ -95,17 +95,17 @@ export default function DraftPin({ x: initX, y: initY, projectId, overlayRect, o
       {/* Invisible click-catcher for outside-click guard */}
       <div className="absolute inset-0 z-0" onClick={handleOverlayClick} />
 
-      {/* Area highlight rectangle (Figma-style) */}
+      {/* Area highlight rectangle (Figma-style, dashed border only) */}
       {areaStyle && (
         <div
-          className="absolute z-[5] border-2 border-dashed border-orange-400 bg-orange-400/10 pointer-events-none"
+          className="absolute z-[5] border border-dashed border-blue-400/60 pointer-events-none rounded-sm"
           style={areaStyle}
         />
       )}
 
       {/* Pin marker — draggable */}
       <div
-        className="absolute z-10"
+        className="absolute z-[60]"
         style={{
           left: `${pos.x}%`,
           top: `${pos.y}%`,
@@ -134,7 +134,7 @@ export default function DraftPin({ x: initX, y: initY, projectId, overlayRect, o
 
           {/* Composer — positioned relative to pin */}
           <div
-            className={`absolute top-0 z-20 ${flipLeft ? 'right-10' : 'left-10'}`}
+            className={`absolute top-0 z-[70] ${flipLeft ? 'right-10' : 'left-10'}`}
             style={{ transform: 'translateY(-50%)' }}
           >
             <div
@@ -143,21 +143,13 @@ export default function DraftPin({ x: initX, y: initY, projectId, overlayRect, o
               onClick={(e) => e.stopPropagation()}
             >
               <Composer
-                placeholder="Describe the issue…"
+                placeholder="Add a comment…"
                 projectId={projectId}
                 onSubmit={handleSubmit}
                 sending={submitting}
                 autoFocus
-                shortcutHint
                 onContentChange={setHasContent}
               />
-              <button
-                onClick={onCancel}
-                className="mt-1 px-1 text-[10px] text-gray-400 hover:text-gray-600"
-                type="button"
-              >
-                Cancel · Esc
-              </button>
             </div>
           </div>
         </div>

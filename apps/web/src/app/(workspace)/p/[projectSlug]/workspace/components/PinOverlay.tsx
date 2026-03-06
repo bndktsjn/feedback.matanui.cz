@@ -6,7 +6,7 @@ import { clamp, canonicalUrl } from '../lib/utils';
 import PinMarker from './PinMarker';
 import DraftPin from './DraftPin';
 import type { StagedFile } from './Composer';
-import { DraftPin as DraftPinType, Viewport, SelectionMode } from '../types';
+import { DraftPin as DraftPinType, Viewport } from '../types';
 
 interface PinOverlayProps {
   threads: Thread[];
@@ -19,7 +19,6 @@ interface PinOverlayProps {
   currentPageUrl: string;
   viewport: Viewport;
   projectId: string;
-  selectionMode: SelectionMode;
   onOverlayClick: (xPct: number, yPct: number) => void;
   onAreaSelect: (x1: number, y1: number, x2: number, y2: number) => void;
   onPinHoverEnter: (thread: Thread) => void;
@@ -44,7 +43,6 @@ export default function PinOverlay({
   currentPageUrl,
   viewport,
   projectId,
-  selectionMode,
   onOverlayClick,
   onAreaSelect,
   onPinHoverEnter,
@@ -236,10 +234,16 @@ export default function PinOverlay({
     };
   }, [iframeRef]);
 
-  /* ── Area selection state ──────────────────────────────────────── */
-  const [areaStart, setAreaStart] = useState<{ x: number; y: number } | null>(null);
-  const [areaCurrent, setAreaCurrent] = useState<{ x: number; y: number } | null>(null);
-  const areaDrawing = useRef(false);
+  /* ── Figma-style area interaction state ───────────────────
+     Click = place pin. Drag = create area with handles.
+     Active area persists with resize/position handles.
+  ────────────────────────────────────────────────────── */
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null);
+  const [activeArea, setActiveArea] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [draggedHandle, setDraggedHandle] = useState<'resize' | 'position' | null>(null);
+  const pointerDown = useRef(false);
+  const DRAG_THRESHOLD = 2; // % distance to distinguish click from drag
 
   function getOverlayPct(e: React.MouseEvent) {
     const rect = overlayRef.current!.getBoundingClientRect();
@@ -249,52 +253,136 @@ export default function PinOverlay({
     };
   }
 
-  /* ── Click / mousedown handler for pin placement or area start ── */
+  // Click outside to deselect active area
   const handleOverlayClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!pinMode) return;
       if (e.target !== overlayRef.current) return;
       if (draftPin) { onDraftCancel(); return; }
-      if (selectionMode === 'area') return; // area handled via mousedown
-      const rect = overlayRef.current!.getBoundingClientRect();
-      const xPct = clamp(((e.clientX - rect.left) / rect.width) * 100, 0, 100);
-      const yPct = clamp(((e.clientY - rect.top) / rect.height) * 100, 0, 100);
-      onOverlayClick(xPct, yPct);
+      if (activeArea) {
+        setActiveArea(null);
+        return;
+      }
+      // Pin/area placement is handled entirely via mousedown/mouseup
     },
-    [pinMode, draftPin, onOverlayClick, onDraftCancel, selectionMode]
+    [pinMode, draftPin, onDraftCancel, activeArea]
   );
 
   function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
-    if (!pinMode || selectionMode !== 'area' || draftPin) return;
-    if (e.target !== overlayRef.current) return;
-    e.preventDefault();
+    if (!pinMode || draftPin) return;
+    if (e.button !== 0) return;
+    
+    const target = e.target as HTMLElement;
+    const rect = overlayRef.current!.getBoundingClientRect();
     const pos = getOverlayPct(e);
-    setAreaStart(pos);
-    setAreaCurrent(pos);
-    areaDrawing.current = true;
+    
+    // Check if clicking on area handles
+    if (activeArea) {
+      const handleSize = 12; // in pixels
+      const handlePctX = (handleSize / rect.width) * 100;
+      const handlePctY = (handleSize / rect.height) * 100;
+      
+      // Resize handle (bottom-right)
+      if (pos.x >= activeArea.x2 - handlePctX && pos.x <= activeArea.x2 + handlePctX &&
+          pos.y >= activeArea.y2 - handlePctY && pos.y <= activeArea.y2 + handlePctY) {
+        e.preventDefault();
+        setDraggedHandle('resize');
+        setDragStart(pos);
+        setDragCurrent(pos);
+        pointerDown.current = true;
+        return;
+      }
+      
+      // Position handle (top-left)
+      if (pos.x >= activeArea.x1 - handlePctX && pos.x <= activeArea.x1 + handlePctX &&
+          pos.y >= activeArea.y1 - handlePctY && pos.y <= activeArea.y1 + handlePctY) {
+        e.preventDefault();
+        setDraggedHandle('position');
+        setDragStart(pos);
+        setDragCurrent(pos);
+        pointerDown.current = true;
+        return;
+      }
+      
+      // Clicking inside area or outside -> deselect
+      if (target === overlayRef.current) {
+        setActiveArea(null);
+        return;
+      }
+    }
+    
+    // Start new area drag
+    if (target === overlayRef.current) {
+      e.preventDefault();
+      setDragStart(pos);
+      setDragCurrent(pos);
+      pointerDown.current = true;
+    }
   }
 
   function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    if (!areaDrawing.current || !areaStart) return;
-    setAreaCurrent(getOverlayPct(e));
+    if (!pointerDown.current || !dragStart) return;
+    const pos = getOverlayPct(e);
+    
+    if (draggedHandle === 'resize' && activeArea) {
+      // Resize area from bottom-right
+      setActiveArea({
+        ...activeArea,
+        x2: Math.max(activeArea.x1, pos.x),
+        y2: Math.max(activeArea.y1, pos.y),
+      });
+    } else if (draggedHandle === 'position' && activeArea) {
+      // Move entire area
+      const dx = pos.x - (dragCurrent?.x || 0);
+      const dy = pos.y - (dragCurrent?.y || 0);
+      const width = activeArea.x2 - activeArea.x1;
+      const height = activeArea.y2 - activeArea.y1;
+      
+      setActiveArea({
+        x1: clamp(activeArea.x1 + dx, 0, 100 - width),
+        y1: clamp(activeArea.y1 + dy, 0, 100 - height),
+        x2: clamp(activeArea.x2 + dx, width, 100),
+        y2: clamp(activeArea.y2 + dy, height, 100),
+      });
+      setDragCurrent(pos);
+    } else {
+      // New area drag
+      setDragCurrent(pos);
+    }
   }
 
   function handleMouseUp(e: React.MouseEvent<HTMLDivElement>) {
-    if (!areaDrawing.current || !areaStart) return;
-    areaDrawing.current = false;
-    const end = getOverlayPct(e);
-    setAreaStart(null);
-    setAreaCurrent(null);
-    // Minimum area threshold (prevent accidental tiny rectangles)
-    const w = Math.abs(end.x - areaStart.x);
-    const h = Math.abs(end.y - areaStart.y);
-    if (w < 1 && h < 1) return;
-    onAreaSelect(
-      Math.min(areaStart.x, end.x),
-      Math.min(areaStart.y, end.y),
-      Math.max(areaStart.x, end.x),
-      Math.max(areaStart.y, end.y),
-    );
+    if (!pointerDown.current || !dragStart) return;
+    pointerDown.current = false;
+    
+    if (draggedHandle) {
+      // Finished dragging a handle
+      setDraggedHandle(null);
+      setDragStart(null);
+      setDragCurrent(null);
+      return;
+    }
+    
+    // Finished new area drag
+    const end = dragCurrent!;
+    const w = Math.abs(end.x - dragStart.x);
+    const h = Math.abs(end.y - dragStart.y);
+    
+    setDragStart(null);
+    setDragCurrent(null);
+    
+    if (w < DRAG_THRESHOLD && h < DRAG_THRESHOLD) {
+      // Click → place pin
+      onOverlayClick(dragStart.x, dragStart.y);
+    } else {
+      // Drag → create area with handles
+      setActiveArea({
+        x1: Math.min(dragStart.x, end.x),
+        y1: Math.min(dragStart.y, end.y),
+        x2: Math.max(dragStart.x, end.x),
+        y2: Math.max(dragStart.y, end.y),
+      });
+    }
   }
 
   const overlayRect = overlayRef.current?.getBoundingClientRect() ?? null;
@@ -329,7 +417,7 @@ export default function PinOverlay({
         width: '100%',
         height: docHeight > 0 ? docHeight : '100%',
         pointerEvents: (pinMode || panelHidden) ? 'auto' : 'none',
-        cursor: pinMode ? (draftPin ? 'default' : (selectionMode === 'area' ? 'crosshair' : 'crosshair')) : 'default',
+        cursor: pinMode ? (draftPin ? 'default' : 'crosshair') : 'default',
       }}
       onClick={handleOverlayClick}
       onMouseDown={handleMouseDown}
@@ -340,12 +428,12 @@ export default function PinOverlay({
       {threadAreas.map(({ thread: t, x1, y1, x2, y2 }) => (
         <div
           key={`area-${t.id}`}
-          className={`absolute border-2 pointer-events-auto cursor-pointer transition ${
+          className={`absolute border pointer-events-auto cursor-pointer transition rounded-sm ${
             activeThreadId === t.id
-              ? 'border-blue-500 bg-blue-500/10'
+              ? 'border-blue-500 bg-blue-500/8'
               : hoveredThreadId === t.id
-                ? 'border-blue-400 bg-blue-400/8'
-                : 'border-blue-300/50 bg-blue-300/5 hover:border-blue-400 hover:bg-blue-400/10'
+                ? 'border-blue-400/70 bg-blue-400/5'
+                : 'border-blue-300/40 hover:border-blue-400/60 hover:bg-blue-400/5'
           }`}
           style={{
             left: `${x1}%`,
@@ -359,17 +447,72 @@ export default function PinOverlay({
         />
       ))}
 
-      {/* Live area selection rectangle */}
-      {areaStart && areaCurrent && (
+      {/* Live area selection rectangle (only visible when dragging new area) */}
+      {dragStart && dragCurrent && !draggedHandle && Math.abs(dragCurrent.x - dragStart.x) + Math.abs(dragCurrent.y - dragStart.y) > DRAG_THRESHOLD && (
         <div
-          className="absolute border-2 border-dashed border-orange-400 bg-orange-400/10 pointer-events-none z-[5]"
+          className="absolute border border-dashed border-blue-400/70 pointer-events-none z-[5] rounded-sm"
           style={{
-            left: `${Math.min(areaStart.x, areaCurrent.x)}%`,
-            top: `${Math.min(areaStart.y, areaCurrent.y)}%`,
-            width: `${Math.abs(areaCurrent.x - areaStart.x)}%`,
-            height: `${Math.abs(areaCurrent.y - areaStart.y)}%`,
+            left: `${Math.min(dragStart.x, dragCurrent.x)}%`,
+            top: `${Math.min(dragStart.y, dragCurrent.y)}%`,
+            width: `${Math.abs(dragCurrent.x - dragStart.x)}%`,
+            height: `${Math.abs(dragCurrent.y - dragStart.y)}%`,
           }}
         />
+      )}
+
+      {/* Active area with handles */}
+      {activeArea && (
+        <>
+          {/* Area rectangle */}
+          <div
+            className="absolute border border-dashed border-blue-400/70 bg-blue-400/5 pointer-events-none z-[5] rounded-sm"
+            style={{
+              left: `${activeArea.x1}%`,
+              top: `${activeArea.y1}%`,
+              width: `${activeArea.x2 - activeArea.x1}%`,
+              height: `${activeArea.y2 - activeArea.y1}%`,
+            }}
+          />
+          
+          {/* Create comment button (centered in area) */}
+          <button
+            className="absolute z-[75] px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition shadow-lg pointer-events-auto"
+            style={{
+              left: `${(activeArea.x1 + activeArea.x2) / 2}%`,
+              top: `${(activeArea.y1 + activeArea.y2) / 2}%`,
+              transform: 'translate(-50%, -50%)',
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAreaSelect(activeArea.x1, activeArea.y1, activeArea.x2, activeArea.y2);
+              setActiveArea(null);
+            }}
+          >
+            Add comment
+          </button>
+          
+          {/* Position handle (top-left) */}
+          <div
+            className="absolute z-[80] w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-move shadow-md"
+            style={{
+              left: `${activeArea.x1}%`,
+              top: `${activeArea.y1}%`,
+              transform: 'translate(-50%, -50%)',
+            }}
+            title="Drag to move area"
+          />
+          
+          {/* Resize handle (bottom-right) */}
+          <div
+            className="absolute z-[80] w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nwse-resize shadow-md"
+            style={{
+              left: `${activeArea.x2}%`,
+              top: `${activeArea.y2}%`,
+              transform: 'translate(-50%, -50%)',
+            }}
+            title="Drag to resize area"
+          />
+        </>
       )}
 
       {/* Existing pin markers */}

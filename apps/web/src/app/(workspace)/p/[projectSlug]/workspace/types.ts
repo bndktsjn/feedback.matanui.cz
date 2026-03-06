@@ -16,12 +16,10 @@ export interface ProjectInfo {
   };
 }
 
-export type SelectionMode = 'pin' | 'area';
-
 export interface DraftPin {
   x: number;
   y: number;
-  /** Area selection bounds (Figma-style rectangle) — present when mode='area' */
+  /** Area selection bounds — present when user dragged a rectangle */
   area?: { x2: number; y2: number };
 }
 

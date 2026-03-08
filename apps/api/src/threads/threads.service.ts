@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@feedback/db';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { CreateThreadDto, UpdateThreadDto, ThreadQueryDto } from './dto';
 
 @Injectable()
@@ -102,11 +103,12 @@ export class ThreadsService {
       this.prisma.thread.count({ where }),
     ]);
 
-    // Convert Prisma Decimal to plain numbers for clean JSON serialization
+    // Convert Prisma Decimal to plain numbers + normalize URLs
     const data = rawData.map((t) => ({
       ...t,
       xPct: t.xPct != null ? Number(t.xPct) : null,
       yPct: t.yPct != null ? Number(t.yPct) : null,
+      screenshotUrl: StorageService.normalizeUrl(t.screenshotUrl),
     }));
 
     return { data, total };
@@ -157,10 +159,11 @@ export class ThreadsService {
       ...thread,
       xPct: thread.xPct != null ? Number(thread.xPct) : null,
       yPct: thread.yPct != null ? Number(thread.yPct) : null,
-      attachments: attachments.map((a) => ({ ...a, sizeBytes: Number(a.sizeBytes) })),
+      screenshotUrl: StorageService.normalizeUrl(thread.screenshotUrl),
+      attachments: attachments.map((a) => ({ ...a, sizeBytes: Number(a.sizeBytes), url: StorageService.normalizeUrl(a.url) || a.url })),
       comments: thread.comments.map((c) => ({
         ...c,
-        attachments: (commentAttMap.get(c.id) || []).map((a) => ({ ...a, sizeBytes: Number(a.sizeBytes) })),
+        attachments: (commentAttMap.get(c.id) || []).map((a) => ({ ...a, sizeBytes: Number(a.sizeBytes), url: StorageService.normalizeUrl(a.url) || a.url })),
       })),
     };
   }

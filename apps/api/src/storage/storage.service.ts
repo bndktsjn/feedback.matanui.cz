@@ -45,10 +45,20 @@ export class StorageService implements OnModuleInit {
     }
   }
 
-  /** Build a public URL that routes through the API (not direct to S3) */
+  /** Build a public URL that routes through the API (not direct to S3).
+   *  Uses relative path so it works in any environment (dev/prod). */
   getPublicUrl(storageKey: string): string {
-    const appUrl = process.env.APP_URL || '';
-    return `${appUrl}/api/v1/uploads/file/${storageKey}`;
+    return `/api/v1/uploads/file/${storageKey}`;
+  }
+
+  /** Normalize a stored URL — strip any absolute localhost/dev prefix
+   *  so it becomes a relative path that works on the current host. */
+  static normalizeUrl(url: string | null | undefined): string | null {
+    if (!url) return null;
+    // Strip http://localhost:XXXX prefix or any http(s)://host prefix before /api/
+    const apiIdx = url.indexOf('/api/v1/uploads/file/');
+    if (apiIdx > 0) return url.slice(apiIdx);
+    return url;
   }
 
   async upload(

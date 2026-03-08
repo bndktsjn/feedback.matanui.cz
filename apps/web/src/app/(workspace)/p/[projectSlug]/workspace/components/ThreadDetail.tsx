@@ -8,6 +8,8 @@ import MoreMenu, { MenuItem } from './MoreMenu';
 import { IconBack, IconCheck, IconSend, IconLink, IconTrash, IconInfo, IconPencil, IconImage } from './Icons';
 import Composer from './Composer';
 import PagePreview from './PagePreview';
+import ScreenshotEditor from './ScreenshotEditor';
+import ScreenshotLightbox from './ScreenshotLightbox';
 import { copyToClipboard } from '../lib/utils';
 import React from 'react';
 
@@ -39,6 +41,7 @@ interface ThreadDetailProps {
   thread: Thread;
   projectId: string;
   currentUser: User | null;
+  userRole?: string;
   onBack: () => void;
   onResolve: (thread: Thread) => void;
   onDelete: (thread: Thread) => void;
@@ -51,6 +54,7 @@ export default function ThreadDetail({
   thread: initialThread,
   projectId,
   currentUser,
+  userRole = '',
   onBack,
   onResolve,
   onDelete,
@@ -63,6 +67,15 @@ export default function ThreadDetail({
   const [replySending, setReplySending] = useState(false);
   const [editingReply, setEditingReply] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
+  const [showScreenshotEditor, setShowScreenshotEditor] = useState(false);
+  const [showScreenshotLightbox, setShowScreenshotLightbox] = useState(false);
+  const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null);
+
+  // WPF parity: only admin or thread author can edit/delete screenshot
+  const canEditScreenshot = (
+    userRole === 'admin' || userRole === 'owner' ||
+    (currentUser && thread.author?.id === currentUser.id)
+  );
 
   // Check if current user can edit this comment
   const canEditComment = useCallback((comment: Comment) => {
@@ -79,6 +92,44 @@ export default function ThreadDetail({
   // Load full thread data (with attachments, comments) on mount
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadThread(); }, [loadThread]);
+
+  // Load screenshot blob for editing when requested
+  useEffect(() => {
+    if (showScreenshotEditor && thread.screenshotUrl && !screenshotBlob) {
+      fetch(thread.screenshotUrl)
+        .then((r) => r.blob())
+        .then(setScreenshotBlob)
+        .catch(() => { showToast('Failed to load screenshot'); setShowScreenshotEditor(false); });
+    }
+  }, [showScreenshotEditor, thread.screenshotUrl, screenshotBlob, showToast]);
+
+  async function handleScreenshotSave(editedBlob: Blob) {
+    setShowScreenshotEditor(false);
+    setScreenshotBlob(null);
+    try {
+      const file = new File([editedBlob], 'screenshot-edited.png', { type: 'image/png' });
+      const uploaded = await attachmentsApi.uploadFile(file, 'thread', thread.id);
+      await threadsApi.update(projectId, thread.id, { screenshotUrl: uploaded.url });
+      showToast('Screenshot updated');
+      loadThread();
+      onRefresh();
+    } catch {
+      showToast('Failed to save screenshot');
+    }
+  }
+
+  async function handleScreenshotDelete() {
+    setShowScreenshotEditor(false);
+    setScreenshotBlob(null);
+    try {
+      await threadsApi.update(projectId, thread.id, { screenshotUrl: null });
+      showToast('Screenshot removed');
+      loadThread();
+      onRefresh();
+    } catch {
+      showToast('Failed to remove screenshot');
+    }
+  }
 
   async function postReply(contentArg?: string, files?: StagedFile[]) {
     const content = (contentArg || replyContent).trim();
@@ -190,7 +241,7 @@ export default function ThreadDetail({
     action: () => onDelete(thread),
   });
 
-  return (
+  return (<>
     <div className="flex h-full flex-col">
       {/* Back + actions */}
       <div className="shrink-0 border-b border-gray-100 px-3 py-2">
@@ -216,11 +267,34 @@ export default function ThreadDetail({
             createdAt={thread.createdAt}
           />
           <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{renderWithMentions(thread.message)}</p>
-          {/* Screenshot or page preview */}
+          {/* Screenshot preview — WPF parity: click → editor (admins/author) or lightbox (others) */}
           <PagePreview
             screenshotUrl={thread.screenshotUrl}
-            pageUrl={thread.pageUrl}
-            onScreenshotClick={() => window.open(thread.screenshotUrl!, '_blank')}
+            onScreenshotClick={() => {
+              if (canEditScreenshot) {
+                setShowScreenshotEditor(true);
+              } else {
+                setShowScreenshotLightbox(true);
+              }
+            }}
+            actions={canEditScreenshot && thread.screenshotUrl ? (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowScreenshotEditor(true); }}
+                  className="flex h-5 w-5 items-center justify-center rounded bg-white/90 text-gray-500 hover:text-blue-600 shadow-sm"
+                  title="Edit screenshot"
+                >
+                  <IconPencil />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleScreenshotDelete(); }}
+                  className="flex h-5 w-5 items-center justify-center rounded bg-white/90 text-gray-500 hover:text-red-500 shadow-sm"
+                  title="Remove screenshot"
+                >
+                  <IconTrash />
+                </button>
+              </>
+            ) : undefined}
           />
           {/* Attachments */}
           {thread.attachments && thread.attachments.length > 0 && (
@@ -326,5 +400,21 @@ export default function ThreadDetail({
         />
       </div>
     </div>
-  );
+
+    {showScreenshotEditor && screenshotBlob && (
+      <ScreenshotEditor
+        imageBlob={screenshotBlob}
+        onSave={handleScreenshotSave}
+        onCancel={() => { setShowScreenshotEditor(false); setScreenshotBlob(null); }}
+        onDelete={handleScreenshotDelete}
+      />
+    )}
+
+    {showScreenshotLightbox && thread.screenshotUrl && (
+      <ScreenshotLightbox
+        screenshotUrl={thread.screenshotUrl}
+        onClose={() => setShowScreenshotLightbox(false)}
+      />
+    )}
+  </>);
 }

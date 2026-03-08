@@ -9,6 +9,7 @@ import { IconClose, IconCheck, IconSend, IconPencil, IconTrash, IconImage } from
 import Composer from './Composer';
 import type { StagedFile } from './Composer';
 import ScreenshotEditor from './ScreenshotEditor';
+import ScreenshotLightbox from './ScreenshotLightbox';
 import PagePreview from './PagePreview';
 import React from 'react';
 
@@ -93,6 +94,7 @@ interface ThreadPopoverProps {
   pinRect: DOMRect;
   panelOpen: boolean;
   currentUser: User | null;
+  userRole?: string;
   isAnonymous?: boolean;
   guestEmail?: string;
   onClose: () => void;
@@ -109,6 +111,7 @@ export function ThreadPopover({
   pinRect,
   panelOpen,
   currentUser,
+  userRole = '',
   isAnonymous = false,
   guestEmail = '',
   onClose,
@@ -126,8 +129,15 @@ export function ThreadPopover({
   const [shaking, setShaking] = useState(false);
   const [style, setStyle] = useState<React.CSSProperties>({ opacity: 0 });
   const [showScreenshotEditor, setShowScreenshotEditor] = useState(false);
+  const [showScreenshotLightbox, setShowScreenshotLightbox] = useState(false);
   const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+
+  // WPF parity: only admin or thread author can edit/delete screenshot
+  const canEditScreenshot = !isAnonymous && (
+    userRole === 'admin' || userRole === 'owner' ||
+    (currentUser && thread.author?.id === currentUser.id)
+  );
 
   // Load screenshot blob for editing when requested
   useEffect(() => {
@@ -334,19 +344,33 @@ export function ThreadPopover({
               createdAt={thread.createdAt}
             />
             <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-800">{renderWithMentions(thread.message)}</p>
-            {/* Screenshot or page preview */}
+            {/* Screenshot preview — WPF parity: click → editor (admins/author) or lightbox (others) */}
             <PagePreview
               screenshotUrl={thread.screenshotUrl}
-              pageUrl={thread.pageUrl}
-              onScreenshotClick={() => window.open(thread.screenshotUrl!, '_blank')}
-              actions={thread.screenshotUrl ? (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowScreenshotEditor(true); }}
-                  className="flex h-5 w-5 items-center justify-center rounded bg-white/90 text-gray-500 hover:text-blue-600 shadow-sm"
-                  title="Edit screenshot"
-                >
-                  <IconPencil />
-                </button>
+              onScreenshotClick={() => {
+                if (canEditScreenshot) {
+                  setShowScreenshotEditor(true);
+                } else {
+                  setShowScreenshotLightbox(true);
+                }
+              }}
+              actions={canEditScreenshot && thread.screenshotUrl ? (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowScreenshotEditor(true); }}
+                    className="flex h-5 w-5 items-center justify-center rounded bg-white/90 text-gray-500 hover:text-blue-600 shadow-sm"
+                    title="Edit screenshot"
+                  >
+                    <IconPencil />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleScreenshotDelete(); }}
+                    className="flex h-5 w-5 items-center justify-center rounded bg-white/90 text-gray-500 hover:text-red-500 shadow-sm"
+                    title="Remove screenshot"
+                  >
+                    <IconTrash />
+                  </button>
+                </>
               ) : undefined}
             />
             {/* Attachments */}
@@ -479,6 +503,13 @@ export function ThreadPopover({
         onSave={handleScreenshotSave}
         onCancel={() => { setShowScreenshotEditor(false); setScreenshotBlob(null); }}
         onDelete={handleScreenshotDelete}
+      />
+    )}
+
+    {showScreenshotLightbox && thread.screenshotUrl && (
+      <ScreenshotLightbox
+        screenshotUrl={thread.screenshotUrl}
+        onClose={() => setShowScreenshotLightbox(false)}
       />
     )}
   </>);

@@ -70,7 +70,7 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<ENDSSH
   docker compose -f infra/docker-compose.prod.yml --env-file .env exec api \
     node -e "
       const { execSync } = require('child_process');
-      execSync('npx prisma migrate deploy --schema=/app/packages/db/prisma/schema.prisma', { stdio: 'inherit' });
+      execSync('npx prisma@5 migrate deploy --schema=/app/packages/db/prisma/schema.prisma', { stdio: 'inherit' });
     "
 
   echo ">>> Services status:"

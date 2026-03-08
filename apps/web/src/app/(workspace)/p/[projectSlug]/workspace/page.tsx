@@ -28,6 +28,7 @@ export default function WorkspacePage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [userRole, setUserRole] = useState('');
   const [allowAnonymousComments, setAllowAnonymousComments] = useState(false);
   const [guestEmail, setGuestEmail] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('wpf-guest-email') || '';
@@ -91,8 +92,8 @@ export default function WorkspacePage() {
   }, [project]);
 
   // Helper: update page URL with state reset on change
+  // Stable callback — no deps needed; all state updates use functional form.
   const updatePageUrl = useCallback((canonical: string) => {
-    console.log('updatePageUrl called', { canonical, prev: currentPageUrl });
     setCurrentPageUrl((prev) => {
       if (prev !== canonical) {
         console.log('Page URL changed', { from: prev, to: canonical });
@@ -105,7 +106,7 @@ export default function WorkspacePage() {
       }
       return prev !== canonical ? canonical : prev;
     });
-  }, [currentPageUrl]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track iframe navigation + keyboard via bridge (cross-origin) + direct DOM (same-origin fallback)
   const pinModeRef = useRef(pinMode);
@@ -187,7 +188,7 @@ export default function WorkspacePage() {
       clearInterval(urlPollTimer);
       window.removeEventListener('message', onBridgeMessage);
     };
-  }, [project]);
+  }, [project, updatePageUrl]);
 
   /* ── Toast helper ───────────────────────────────────────────── */
   const showToast = useCallback((msg: string) => {
@@ -210,6 +211,7 @@ export default function WorkspacePage() {
           const found = projList.find((p) => p.slug === projectSlug);
           if (found) {
             setProject(found);
+            setUserRole(org.role || '');
             // Check project settings for anonymous comments capability
             try {
               const detail = await projects.get(org.id, found.id) as { settings?: ProjectSettings };
@@ -813,6 +815,7 @@ export default function WorkspacePage() {
           pinRect={popoverPinRect}
           panelOpen={effectivePanelOpen}
           currentUser={currentUser}
+          userRole={userRole}
           isAnonymous={isAnonymous}
           guestEmail={guestEmail}
           onClose={() => { setPopoverThread(null); setPopoverPinRect(null); }}

@@ -68,6 +68,10 @@ export default function PinOverlay({
   const docHeightRef = useRef(0);
   const bridgeActive = useRef(false);
 
+  // Keep a ref to onNavigate so the message listener always calls the latest version
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
+
   // Apply transform helper — updates overlay position immediately
   function applyTransform(sy: number) {
     const overlay = overlayRef.current;
@@ -107,9 +111,9 @@ export default function PinOverlay({
         case 'FB_NAVIGATED':
           bridgeActive.current = true;
           console.log('PinOverlay: FB_NAVIGATED received', { pageUrl: d.pageUrl, pageTitle: d.pageTitle });
-          // Notify parent workspace page about navigation
-          if (d.pageUrl && onNavigate) {
-            onNavigate(d.pageUrl, d.pageTitle);
+          // Notify parent workspace page about navigation (use ref for latest callback)
+          if (d.pageUrl && onNavigateRef.current) {
+            onNavigateRef.current(d.pageUrl, d.pageTitle);
           }
           break;
       }
@@ -117,7 +121,7 @@ export default function PinOverlay({
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — onNavigateRef handles staleness
 
   /* ── Send FB_INIT handshake to iframe ──────────────────────────
      Asks the bridge script to send FB_READY. Retried on iframe load.
@@ -321,7 +325,7 @@ export default function PinOverlay({
     if (t.contextType !== 'pin' || t.xPct == null || t.yPct == null) return false;
     // Viewport filter — WPF checks (t.viewport || 'desktop') !== viewportFilter
     if ((t.viewport || 'desktop') !== viewport) return false;
-    if (!currentPageUrl) return true; // URL not yet known — show all
+    if (!currentPageUrl) return false; // URL not yet known — don't show pins
     const threadUrl = canonicalUrl(t.pageUrl || '');
     return threadUrl === currentPageUrl;
   });

@@ -63,9 +63,9 @@ export default function ScreenshotEditor({ imageBlob, onSave, onCancel, onDelete
     const overlay = overlayCanvasRef.current;
     const container = containerRef.current;
 
-    // Fit image into container
-    const maxW = container.clientWidth - 32;
-    const maxH = container.clientHeight - 120;
+    // Fit image into 90vw × 90vh viewport (minus toolbar ~48px)
+    const maxW = window.innerWidth * 0.9 - 16;
+    const maxH = window.innerHeight * 0.9 - 64;
     const scale = Math.min(1, maxW / img.width, maxH / img.height);
     setCanvasScale(scale);
 
@@ -351,134 +351,159 @@ export default function ScreenshotEditor({ imageBlob, onSave, onCancel, onDelete
     { id: 'text', label: 'Text', icon: <IconType /> },
   ];
 
+  // Click outside → close (with dirty guard)
+  const isDirty = actions.length > 0;
+  function tryClose() {
+    if (isDirty) {
+      if (!window.confirm('You have unsaved changes. Discard?')) return;
+    }
+    onCancel();
+  }
+
+  // Esc key → close with dirty guard
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); tryClose(); }
+    }
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }); // intentionally no deps — always uses latest isDirty
+
   if (!img) {
     return createPortal(
-      <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+      <div className="fixed inset-0 z-[99999] flex items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500" />
       </div>,
       document.body
     );
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] flex flex-col bg-gray-900/95">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 border-b border-gray-700 bg-gray-800 px-4 py-2">
-        <span className="mr-2 text-sm font-medium text-white">Edit Screenshot</span>
-
-        <div className="flex items-center gap-0.5 rounded-md bg-gray-700/60 p-0.5">
-          {tools.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTool(t.id)}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition ${
-                tool === t.id ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-              title={t.label}
-            >
-              {t.icon}
-              <span className="hidden sm:inline">{t.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Colors */}
-        {(tool === 'marker' || tool === 'arrow' || tool === 'text') && (
-          <div className="flex items-center gap-1 ml-2">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => setColor(c)}
-                className={`h-5 w-5 rounded-full border-2 transition ${
-                  color === c ? 'border-white scale-110' : 'border-transparent hover:border-gray-400'
-                }`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center gap-1 ml-auto">
-          <button
-            onClick={undo}
-            disabled={actions.length === 0}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:text-white disabled:opacity-30"
-            title="Undo"
-          >
-            <IconUndo />
-          </button>
-          <button
-            onClick={redo}
-            disabled={redoStack.length === 0}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:text-white disabled:opacity-30"
-            title="Redo"
-          >
-            <IconRedo />
-          </button>
-
-          <div className="mx-2 h-4 w-px bg-gray-600" />
-
-          <button
-            onClick={onDelete}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-red-400 hover:bg-red-900/30 hover:text-red-300"
-            title="Delete screenshot"
-          >
-            <IconTrash /> Delete
-          </button>
-          <button
-            onClick={onCancel}
-            className="flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-400 hover:text-white"
-          >
-            <IconClose /> Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
-          >
-            <IconCheck /> Save
-          </button>
-        </div>
-      </div>
-
-      {/* Canvas area */}
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center"
+      onClick={(e) => { if (e.target === e.currentTarget) tryClose(); }}
+    >
+      {/* Editor card: toolbar above screenshot, no dimmed background — WPF parity */}
       <div
         ref={containerRef}
-        className="flex flex-1 items-center justify-center overflow-auto p-4"
+        className="flex flex-col rounded-lg shadow-2xl border border-gray-200 bg-white overflow-hidden"
+        style={{ maxWidth: '90vw', maxHeight: '90vh' }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative inline-block rounded-lg shadow-2xl overflow-hidden">
-          <canvas
-            ref={canvasRef}
-            className="block"
-          />
-          <canvas
-            ref={overlayCanvasRef}
-            className="absolute top-0 left-0 cursor-crosshair"
-            onMouseDown={handlePointerDown}
-            onMouseMove={handlePointerMove}
-            onMouseUp={handlePointerUp}
-            onMouseLeave={() => { if (drawing) handlePointerUp(); }}
-          />
-          {/* Inline text input */}
-          {textInput && (
-            <input
-              type="text"
-              autoFocus
-              value={textInput.value}
-              onChange={(e) => setTextInput((prev) => prev ? { ...prev, value: e.target.value } : null)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleTextSubmit();
-                if (e.key === 'Escape') setTextInput(null);
-              }}
-              onBlur={handleTextSubmit}
-              className="absolute bg-white/90 border border-blue-500 rounded px-1 py-0.5 text-sm font-bold outline-none"
-              style={{
-                left: textInput.x,
-                top: textInput.y - 20,
-                color,
-                minWidth: 60,
-              }}
-            />
+        {/* Toolbar — directly above screenshot */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200 bg-gray-50 px-3 py-1.5">
+          <div className="flex items-center gap-0.5 rounded-md bg-gray-200/60 p-0.5">
+            {tools.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTool(t.id)}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition ${
+                  tool === t.id ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-300/50 hover:text-gray-900'
+                }`}
+                title={t.label}
+              >
+                {t.icon}
+                <span className="hidden sm:inline">{t.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Colors */}
+          {(tool === 'marker' || tool === 'arrow' || tool === 'text') && (
+            <div className="flex items-center gap-1 ml-1">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setColor(c)}
+                  className={`h-4.5 w-4.5 rounded-full border-2 transition ${
+                    color === c ? 'border-gray-900 scale-110' : 'border-transparent hover:border-gray-400'
+                  }`}
+                  style={{ backgroundColor: c, width: 18, height: 18 }}
+                />
+              ))}
+            </div>
           )}
+
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={undo}
+              disabled={actions.length === 0}
+              className="flex items-center rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-30"
+              title="Undo"
+            >
+              <IconUndo />
+            </button>
+            <button
+              onClick={redo}
+              disabled={redoStack.length === 0}
+              className="flex items-center rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 disabled:opacity-30"
+              title="Redo"
+            >
+              <IconRedo />
+            </button>
+
+            <div className="mx-1.5 h-4 w-px bg-gray-300" />
+
+            <button
+              onClick={onDelete}
+              className="flex items-center gap-0.5 rounded px-1.5 py-1 text-xs text-red-500 hover:bg-red-50 hover:text-red-600"
+              title="Delete screenshot"
+            >
+              <IconTrash />
+            </button>
+            <button
+              onClick={tryClose}
+              className="flex items-center gap-0.5 rounded px-1.5 py-1 text-xs text-gray-500 hover:bg-gray-200 hover:text-gray-700"
+            >
+              <IconClose />
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!isDirty}
+              className="flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+            >
+              <IconCheck /> Save
+            </button>
+          </div>
+        </div>
+
+        {/* Canvas area */}
+        <div className="overflow-auto" style={{ maxHeight: 'calc(90vh - 48px)' }}>
+          <div className="relative inline-block">
+            <canvas
+              ref={canvasRef}
+              className="block"
+            />
+            <canvas
+              ref={overlayCanvasRef}
+              className="absolute top-0 left-0 cursor-crosshair"
+              onMouseDown={handlePointerDown}
+              onMouseMove={handlePointerMove}
+              onMouseUp={handlePointerUp}
+              onMouseLeave={() => { if (drawing) handlePointerUp(); }}
+            />
+            {/* Inline text input */}
+            {textInput && (
+              <input
+                type="text"
+                autoFocus
+                value={textInput.value}
+                onChange={(e) => setTextInput((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleTextSubmit();
+                  if (e.key === 'Escape') setTextInput(null);
+                }}
+                onBlur={handleTextSubmit}
+                className="absolute bg-white/90 border border-blue-500 rounded px-1 py-0.5 text-sm font-bold outline-none"
+                style={{
+                  left: textInput.x,
+                  top: textInput.y - 20,
+                  color,
+                  minWidth: 60,
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>,

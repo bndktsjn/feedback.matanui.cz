@@ -25,7 +25,12 @@ export default function MembersPage() {
   // Feedback
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+  // Delete organization
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingOrg, setDeletingOrg] = useState(false);
+
   const canManage = org?.role === 'owner' || org?.role === 'admin';
+  const isOwner = org?.role === 'owner';
 
   const showToast = useCallback((message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -129,6 +134,26 @@ export default function MembersPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to remove member';
       showToast(msg, 'error');
+    }
+  }
+
+  // ── Delete Organization ──
+
+  async function handleDeleteOrganization() {
+    if (!org) return;
+    setDeletingOrg(true);
+    try {
+      await orgs.delete(org.id);
+      showToast('Organization deleted successfully', 'success');
+      // Redirect to organizations list after a short delay
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete organization';
+      showToast(msg, 'error');
+    } finally {
+      setDeletingOrg(false);
     }
   }
 
@@ -397,6 +422,59 @@ export default function MembersPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Delete Organization (Owner Only) ── */}
+      {isOwner && (
+        <section className="mt-8 rounded-lg border border-red-200 bg-white">
+          <div className="border-b border-red-200 px-6 py-4">
+            <h2 className="text-lg font-semibold text-red-700">Danger Zone</h2>
+            <p className="mt-1 text-sm text-red-600">
+              Irreversible actions that affect your entire organization
+            </p>
+          </div>
+          <div className="p-6">
+            {!showDeleteConfirm ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Delete organization</p>
+                  <p className="text-sm text-gray-500">
+                    Permanently delete this organization, all its projects, and associated data. This action cannot be undone.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="ml-4 shrink-0 rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                >
+                  Delete organization
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-md bg-red-50 p-4">
+                  <p className="text-sm font-medium text-red-800">
+                    Are you sure? This will permanently delete the organization "{org.name}", all its projects, threads, comments, and attachments. This cannot be undone.
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleDeleteOrganization}
+                    disabled={deletingOrg}
+                    className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {deletingOrg ? 'Deleting...' : 'Yes, delete organization'}
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       {/* Toast */}

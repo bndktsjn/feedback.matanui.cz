@@ -6,27 +6,15 @@ import { threads, comments, orgs, projects, Thread, Comment } from '@/lib/api';
 import React from 'react';
 
 /** Render text with @[Name](id) mentions styled as blue inline badges */
-function renderWithMentions(text: string): React.ReactNode {
+function renderWithMentions(text: string): { __html: string } {
   const mentionRegex = /@\[([^\]]+)\]\([^)]+\)/g;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
+  let result = text;
   let match: RegExpExecArray | null;
-  let key = 0;
   while ((match = mentionRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    parts.push(
-      <span key={key++} className="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">
-        @{match[1]}
-      </span>
-    );
-    lastIndex = match.index + match[0].length;
+    const mentionHtml = `<span class="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">@${match[1]}</span>`;
+    result = result.replace(match[0], mentionHtml);
   }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-  return parts.length > 0 ? parts : text;
+  return { __html: result };
 }
 
 interface ThreadEnv {
@@ -118,7 +106,7 @@ export default function ThreadDetailPage() {
 
       <div className="rounded-lg border border-gray-200 bg-white p-6">
         <div className="flex items-start justify-between">
-          <h1 className="text-xl font-bold text-gray-900">{renderWithMentions(thread.title)}</h1>
+          <h1 className="text-xl font-bold text-gray-900" dangerouslySetInnerHTML={renderWithMentions(thread.title)} />
           <span
             className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[thread.status] || ''}`}
           >
@@ -146,7 +134,7 @@ export default function ThreadDetailPage() {
           )}
         </div>
 
-        <p className="mt-4 whitespace-pre-wrap text-sm text-gray-700">{renderWithMentions(thread.message)}</p>
+        <p className="mt-4 whitespace-pre-wrap text-sm text-gray-700" dangerouslySetInnerHTML={renderWithMentions(thread.message)} />
 
         {thread.screenshotUrl && (
           <div className="mt-4">
@@ -205,7 +193,7 @@ export default function ThreadDetailPage() {
                   </span>
                   <span>{new Date(comment.createdAt).toLocaleString()}</span>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{renderWithMentions(comment.content)}</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700" dangerouslySetInnerHTML={renderWithMentions(comment.content)} />
               </div>
             ))}
           </div>

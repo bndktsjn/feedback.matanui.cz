@@ -7,27 +7,15 @@ import { threads, orgs, projects, Thread } from '@/lib/api';
 import React from 'react';
 
 /** Render text with @[Name](id) mentions styled as blue inline badges */
-function renderWithMentions(text: string): React.ReactNode {
+function renderWithMentions(text: string): { __html: string } {
   const mentionRegex = /@\[([^\]]+)\]\([^)]+\)/g;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
+  let result = text;
   let match: RegExpExecArray | null;
-  let key = 0;
   while ((match = mentionRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    parts.push(
-      <span key={key++} className="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">
-        @{match[1]}
-      </span>
-    );
-    lastIndex = match.index + match[0].length;
+    const mentionHtml = `<span class="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">@${match[1]}</span>`;
+    result = result.replace(match[0], mentionHtml);
   }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-  return parts.length > 0 ? parts : text;
+  return { __html: result };
 }
 
 interface ProjectInfo {
@@ -222,11 +210,11 @@ function ThreadCard({
         href={`/p/${projectSlug}/threads/${thread.id}`}
         className="block text-sm font-medium text-gray-900 hover:text-blue-600"
       >
-        {renderWithMentions(thread.title)}
+        <span dangerouslySetInnerHTML={renderWithMentions(thread.title)} />
       </Link>
 
       {thread.message && (
-        <p className="mt-1 line-clamp-2 text-xs text-gray-500">{renderWithMentions(thread.message)}</p>
+        <p className="mt-1 line-clamp-2 text-xs text-gray-500" dangerouslySetInnerHTML={renderWithMentions(thread.message)} />
       )}
 
       {thread.screenshotUrl && (

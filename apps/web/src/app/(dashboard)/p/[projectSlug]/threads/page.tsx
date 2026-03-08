@@ -61,27 +61,15 @@ function timeAgo(dateStr: string): string {
 }
 
 /** Render text with @[Name](id) mentions styled as blue inline badges */
-function renderWithMentions(text: string): React.ReactNode {
+function renderWithMentions(text: string): { __html: string } {
   const mentionRegex = /@\[([^\]]+)\]\([^)]+\)/g;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
+  let result = text;
   let match: RegExpExecArray | null;
-  let key = 0;
   while ((match = mentionRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    parts.push(
-      <span key={key++} className="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">
-        @{match[1]}
-      </span>
-    );
-    lastIndex = match.index + match[0].length;
+    const mentionHtml = `<span class="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">@${match[1]}</span>`;
+    result = result.replace(match[0], mentionHtml);
   }
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-  return parts.length > 0 ? parts : text;
+  return { __html: result };
 }
 
 function Avatar({ user, size = 'sm' }: { user?: { displayName: string; avatarUrl: string | null }; size?: 'sm' | 'md' }) {
@@ -354,11 +342,11 @@ export default function ThreadsPage() {
                   {/* Content */}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-medium text-gray-900">{renderWithMentions(thread.title)}</span>
+                      <span className="font-medium text-gray-900" dangerouslySetInnerHTML={renderWithMentions(thread.title)} />
                       <span className="shrink-0 text-xs text-gray-400">{timeAgo(thread.createdAt)}</span>
                     </div>
                     {thread.message && (
-                      <p className="mt-0.5 line-clamp-1 text-sm text-gray-500">{renderWithMentions(thread.message)}</p>
+                      <p className="mt-0.5 line-clamp-1 text-sm text-gray-500" dangerouslySetInnerHTML={renderWithMentions(thread.message)} />
                     )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${si.color}`}>
@@ -487,7 +475,7 @@ export default function ThreadsPage() {
             ) : (
               <>
                 {/* Title + status */}
-                <h2 className="text-lg font-semibold text-gray-900">{renderWithMentions(selectedThread.title)}</h2>
+                <h2 className="text-lg font-semibold text-gray-900" dangerouslySetInnerHTML={renderWithMentions(selectedThread.title)} />
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {(isAdmin || (currentUser && selectedThread.author?.id === currentUser.id)) ? (
                     <select
@@ -619,7 +607,7 @@ export default function ThreadsPage() {
                                 </div>
                               </div>
                             ) : (
-                              <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-700">{renderWithMentions(c.content)}</p>
+                              <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-700" dangerouslySetInnerHTML={renderWithMentions(c.content)} />
                             )}
                           </div>
                         );

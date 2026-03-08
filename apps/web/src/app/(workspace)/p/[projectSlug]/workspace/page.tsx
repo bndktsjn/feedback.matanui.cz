@@ -450,40 +450,37 @@ export default function WorkspacePage() {
       setThreadList((prev) => [optimisticThread, ...prev]);
       setStatusCnts((prev) => ({ ...prev, open: prev.open + 1 }));
 
-      // Upload staged files as attachments (fire-and-forget)
+      // Upload staged files as attachments (await all before refresh)
       if (files && files.length > 0) {
-        import('@/lib/api').then(({ attachments: attachmentsApi }) => {
-          files.forEach(async (sf) => {
-            try {
-              await attachmentsApi.uploadFile(sf.file, 'thread', created.id);
-            } catch (err) {
-              console.error('Failed to upload attachment:', err);
-            }
-          });
-        });
+        const { attachments: attachmentsApi } = await import('@/lib/api');
+        for (const sf of files) {
+          try {
+            await attachmentsApi.uploadFile(sf.file, 'thread', created.id);
+          } catch (err) {
+            console.error('Failed to upload attachment:', err);
+          }
+        }
       }
 
-      // Auto-screenshot: capture iframe with pin marker, upload, PATCH thread (fire-and-forget)
+      // Auto-screenshot: capture iframe with pin marker, upload, PATCH thread
       if (iframeRef.current) {
         const iframe = iframeRef.current;
-        captureScreenshot(iframe, threadData.xPct as number, threadData.yPct as number)
-          .then(async (blob) => {
-            if (!blob) return;
+        try {
+          const blob = await captureScreenshot(iframe, threadData.xPct as number, threadData.yPct as number);
+          if (blob) {
             const file = screenshotBlobToFile(blob);
-            try {
-              const { attachments: attachmentsApi } = await import('@/lib/api');
-              const uploaded = await attachmentsApi.uploadFile(file, 'thread', created.id);
-              await threadsApi.update(project!.id, created.id, { screenshotUrl: uploaded.url });
-              console.log('📸 Screenshot attached to thread');
-              loadThreads(); // refresh to show screenshot
-            } catch (err) {
-              console.error('Screenshot upload failed:', err);
-            }
-          });
+            const { attachments: attachmentsApi } = await import('@/lib/api');
+            const uploaded = await attachmentsApi.uploadFile(file, 'thread', created.id);
+            await threadsApi.update(project!.id, created.id, { screenshotUrl: uploaded.url });
+            console.log('📸 Screenshot attached to thread');
+          }
+        } catch (err) {
+          console.error('Screenshot upload failed:', err);
+        }
       }
     }
     
-    // Refresh in background to get full thread data
+    // Refresh after uploads complete to show attachments + screenshot
     loadThreads();
     // Ensure panel is in list view, not detail view
     setViewMode('list');

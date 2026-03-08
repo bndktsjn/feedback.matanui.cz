@@ -262,7 +262,7 @@ export const comments = {
   list: (projectId: string, threadId: string) =>
     apiFetch(`/projects/${projectId}/threads/${threadId}/comments`),
   create: (projectId: string, threadId: string, data: { content: string; guestEmail?: string }) =>
-    apiFetch(`/projects/${projectId}/threads/${threadId}/comments`, {
+    apiFetch<Comment>(`/projects/${projectId}/threads/${threadId}/comments`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),

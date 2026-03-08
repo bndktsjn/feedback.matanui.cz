@@ -513,6 +513,23 @@ export default function ThreadsPage() {
                     </div>
                   </div>
                   <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800" dangerouslySetInnerHTML={renderWithMentions(selectedThread.message)} />
+
+                  {/* Thread attachments */}
+                  {selectedThread.attachments && selectedThread.attachments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {selectedThread.attachments.filter(a => !selectedThread.screenshotUrl || a.url !== selectedThread.screenshotUrl).map((att) => (
+                        att.mimeType?.startsWith('image/') ? (
+                          <div key={att.id} className="rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:opacity-90 transition" style={{ maxWidth: '200px' }}>
+                            <img src={att.url} alt={att.filename} className="w-full object-cover" onClick={() => window.open(att.url, '_blank')} />
+                          </div>
+                        ) : (
+                          <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 transition">
+                            📎 {att.filename}
+                          </a>
+                        )
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Screenshot */}
@@ -608,6 +625,22 @@ export default function ThreadsPage() {
                               </div>
                             ) : (
                               <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-700" dangerouslySetInnerHTML={renderWithMentions(c.content)} />
+                            )}
+                            {/* Comment attachments */}
+                            {c.attachments && c.attachments.length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {c.attachments.map((att) => (
+                                  att.mimeType?.startsWith('image/') ? (
+                                    <div key={att.id} className="rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:opacity-90 transition" style={{ maxWidth: '160px' }}>
+                                      <img src={att.url} alt={att.filename} className="w-full object-cover" onClick={() => window.open(att.url, '_blank')} />
+                                    </div>
+                                  ) : (
+                                    <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 transition">
+                                      📎 {att.filename}
+                                    </a>
+                                  )
+                                ))}
+                              </div>
                             )}
                           </div>
                         );

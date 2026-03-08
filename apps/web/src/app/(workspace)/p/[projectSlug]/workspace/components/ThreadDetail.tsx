@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Thread, Comment, User, threads as threadsApi, comments as commentsApi } from '@/lib/api';
+import { Thread, Comment, User, threads as threadsApi, comments as commentsApi, attachments as attachmentsApi } from '@/lib/api';
+import type { StagedFile } from './Composer';
 import AuthorMeta from './AuthorMeta';
 import MoreMenu, { MenuItem } from './MoreMenu';
 import { IconBack, IconCheck, IconSend, IconLink, IconTrash, IconInfo, IconPencil, IconImage } from './Icons';
@@ -78,7 +79,7 @@ export default function ThreadDetail({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadThread(); }, [loadThread]);
 
-  async function postReply(contentArg?: string) {
+  async function postReply(contentArg?: string, files?: StagedFile[]) {
     const content = (contentArg || replyContent).trim();
     if (!content || replySending) return;
     setReplySending(true);
@@ -113,7 +114,19 @@ export default function ThreadDetail({
       console.log('💬 Creating comment in ThreadDetail:', { projectId, threadId: thread.id, content });
       const result = await commentsApi.create(projectId, thread.id, { content });
       console.log('✅ Comment created in ThreadDetail:', result);
-      // Refresh in background to get real comment data
+
+      // Upload staged files as comment attachments
+      if (files && files.length > 0 && result?.id) {
+        for (const sf of files) {
+          try {
+            await attachmentsApi.uploadFile(sf.file, 'comment', result.id);
+          } catch (err) {
+            console.error('Failed to upload reply attachment:', err);
+          }
+        }
+      }
+
+      // Refresh to get real comment data + attachments
       loadThread();
       onRefresh();
     } catch {
@@ -295,6 +308,22 @@ export default function ThreadDetail({
                 ) : (
                   <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-700">{renderWithMentions(c.content)}</p>
                 )}
+                {/* Comment attachments */}
+                {c.attachments && c.attachments.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {c.attachments.map((att) => (
+                      att.mimeType?.startsWith('image/') ? (
+                        <div key={att.id} className="rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:opacity-90 transition" style={{ maxWidth: '160px' }}>
+                          <img src={att.url} alt={att.filename} className="w-full object-cover" onClick={() => window.open(att.url, '_blank')} />
+                        </div>
+                      ) : (
+                        <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 transition">
+                          📎 {att.filename}
+                        </a>
+                      )
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -306,7 +335,7 @@ export default function ThreadDetail({
         <Composer
           placeholder="Reply…"
           projectId={projectId}
-          onSubmit={(content) => postReply(content)}
+          onSubmit={(content, files) => postReply(content, files)}
           sending={replySending}
           onContentChange={(has) => setReplyContent(has ? ' ' : '')}
         />

@@ -138,11 +138,30 @@ export class ThreadsService {
       orderBy: { createdAt: 'asc' },
     });
 
+    // Fetch comment attachments for all comments in one query
+    const commentIds = thread.comments.map((c) => c.id);
+    const commentAttachments = commentIds.length > 0
+      ? await this.prisma.attachment.findMany({
+          where: { attachableType: 'comment', attachableId: { in: commentIds } },
+          orderBy: { createdAt: 'asc' },
+        })
+      : [];
+    const commentAttMap = new Map<string, typeof commentAttachments>();
+    for (const ca of commentAttachments) {
+      const list = commentAttMap.get(ca.attachableId) || [];
+      list.push(ca);
+      commentAttMap.set(ca.attachableId, list);
+    }
+
     return {
       ...thread,
       xPct: thread.xPct != null ? Number(thread.xPct) : null,
       yPct: thread.yPct != null ? Number(thread.yPct) : null,
       attachments,
+      comments: thread.comments.map((c) => ({
+        ...c,
+        attachments: commentAttMap.get(c.id) || [],
+      })),
     };
   }
 

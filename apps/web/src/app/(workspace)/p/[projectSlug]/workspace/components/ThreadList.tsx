@@ -1,9 +1,34 @@
 'use client';
 
+import React from 'react';
 import { Thread } from '@/lib/api';
 import AuthorMeta from './AuthorMeta';
 import ThreadMenu from './ThreadMenu';
 import { IconCheck } from './Icons';
+
+/** Render text with @[Name](id) mentions styled as blue inline badges */
+function renderWithMentions(text: string): React.ReactNode {
+  const mentionRegex = /@\[([^\]]+)\]\([^)]+\)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = mentionRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <span key={key++} className="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">
+        @{match[1]}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : text;
+}
 
 interface ThreadListProps {
   threads: Thread[];
@@ -88,7 +113,7 @@ function ThreadItem({
 
         {/* Message preview */}
         <div className="mt-1">
-          <p className="line-clamp-2 text-sm text-gray-800">{thread.message}</p>
+          <p className="line-clamp-2 text-sm text-gray-800">{renderWithMentions(thread.message)}</p>
           {thread._count.comments > 0 && (
             <p className="mt-0.5 text-[10px] text-gray-400">
               {thread._count.comments} {thread._count.comments === 1 ? 'reply' : 'replies'}

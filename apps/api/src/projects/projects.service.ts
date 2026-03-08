@@ -174,9 +174,13 @@ export class ProjectsService {
   }
 
   async softDelete(projectId: string): Promise<void> {
+    const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     await this.prisma.project.update({
       where: { id: projectId },
-      data: { deletedAt: new Date() },
+      data: {
+        deletedAt: new Date(),
+        slug: `${project?.slug || projectId}__deleted_${Date.now()}`,
+      },
     });
   }
 

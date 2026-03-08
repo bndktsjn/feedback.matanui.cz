@@ -206,7 +206,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Logo */}
         <div className="flex h-14 items-center border-b border-gray-100 px-4">
           <Link href="/orgs" className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">
+            <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold text-white ${process.env.NODE_ENV === 'production' ? 'bg-green-600' : 'bg-orange-600'}`}>
               F
             </div>
             <span className="text-sm font-bold text-gray-900">Feedback</span>

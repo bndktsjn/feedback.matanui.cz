@@ -358,7 +358,7 @@ export default function ThreadsPage() {
                       <span className="shrink-0 text-xs text-gray-400">{timeAgo(thread.createdAt)}</span>
                     </div>
                     {thread.message && (
-                      <p className="mt-0.5 line-clamp-1 text-sm text-gray-500">{thread.message}</p>
+                      <p className="mt-0.5 line-clamp-1 text-sm text-gray-500">{renderWithMentions(thread.message)}</p>
                     )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${si.color}`}>

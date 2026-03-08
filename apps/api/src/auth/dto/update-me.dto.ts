@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MinLength, MaxLength, IsUrl } from 'class-validator';
+import { IsString, IsOptional, MinLength, MaxLength } from 'class-validator';
 
 export class UpdateMeDto {
   @IsOptional()
@@ -8,7 +8,7 @@ export class UpdateMeDto {
   displayName?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   @MaxLength(512)
   avatarUrl?: string;
 }

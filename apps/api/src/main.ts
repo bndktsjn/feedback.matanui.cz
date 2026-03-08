@@ -1,9 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { json, urlencoded } from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
-import express from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
@@ -16,8 +16,8 @@ async function bootstrap() {
   });
 
   // Increase body size limit for base64 screenshot uploads from overlay widget
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   app.useStaticAssets(join(__dirname, '..', 'public'), { prefix: '/static/' });
 

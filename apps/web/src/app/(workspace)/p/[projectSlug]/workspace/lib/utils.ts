@@ -11,7 +11,7 @@ export function clamp(v: number, lo: number, hi: number): number {
 }
 
 export function canonicalUrl(url: string): string {
-  try { return url.split('?')[0].split('#')[0].replace(/\/+$/, ''); } catch { return url; }
+  try { return url.split('#')[0].replace(/\/+$/, ''); } catch { return url; }
 }
 
 export function truncate(str: string, max: number): string {

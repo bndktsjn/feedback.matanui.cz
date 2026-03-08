@@ -31,6 +31,7 @@ interface PinOverlayProps {
   onDraftSubmit: (message: string, pinX: number, pinY: number, files: StagedFile[], mentionIds: string[], secondary?: { x: number; y: number }) => Promise<void>;
   onDraftCancel: () => void;
   onSecondaryDragEnd?: (thread: Thread, sx: number, sy: number) => void;
+  onNavigate?: (pageUrl: string, pageTitle?: string) => void;
 }
 
 export default function PinOverlay({
@@ -56,6 +57,7 @@ export default function PinOverlay({
   onDraftSubmit,
   onDraftCancel,
   onSecondaryDragEnd,
+  onNavigate,
 }: PinOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [docHeight, setDocHeight] = useState(0);
@@ -101,6 +103,13 @@ export default function PinOverlay({
           bridgeActive.current = true;
           scrollYRef.current = d.scrollY ?? 0;
           applyTransform(scrollYRef.current);
+          break;
+        case 'FB_NAVIGATED':
+          bridgeActive.current = true;
+          // Notify parent workspace page about navigation
+          if (d.pageUrl && onNavigate) {
+            onNavigate(d.pageUrl, d.pageTitle);
+          }
           break;
       }
     }

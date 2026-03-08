@@ -90,30 +90,31 @@ export default function WorkspacePage() {
     if (project) setCurrentPageUrl(canonicalUrl(project.baseUrl));
   }, [project]);
 
+  // Helper: update page URL with state reset on change
+  const updatePageUrl = useCallback((canonical: string) => {
+    setCurrentPageUrl((prev) => {
+      if (prev !== canonical) {
+        // Page changed — reset state (WPF NAVIGATED pattern)
+        setDraftPin(null);
+        setPopoverThread(null);
+        setPopoverPinRect(null);
+        setHoveredThread(null);
+        setHoveredPinRect(null);
+      }
+      return prev !== canonical ? canonical : prev;
+    });
+  }, []);
+
   // Track iframe navigation + keyboard via bridge (cross-origin) + direct DOM (same-origin fallback)
   const pinModeRef = useRef(pinMode);
   pinModeRef.current = pinMode;
 
+  // Bridge communication & iframe tracking
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
     let urlPollTimer: ReturnType<typeof setInterval>;
     let iframeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-
-    // Helper: update page URL with state reset on change
-    function updatePageUrl(canonical: string) {
-      setCurrentPageUrl((prev) => {
-        if (prev !== canonical) {
-          // Page changed — reset state (WPF NAVIGATED pattern)
-          setDraftPin(null);
-          setPopoverThread(null);
-          setPopoverPinRect(null);
-          setHoveredThread(null);
-          setHoveredPinRect(null);
-        }
-        return prev !== canonical ? canonical : prev;
-      });
-    }
 
     // -- Bridge message handler (primary — works cross-origin) --
     function onBridgeMessage(e: MessageEvent) {
@@ -750,6 +751,10 @@ export default function WorkspacePage() {
           onDraftSubmit={handleCreateThread}
           onDraftCancel={() => setDraftPin(null)}
           onSecondaryDragEnd={handleSecondaryDragEnd}
+          onNavigate={(pageUrl) => {
+            // Update the current page URL and reload pins for the new page
+            updatePageUrl(canonicalUrl(pageUrl));
+          }}
         />
 
         {/* Interact mode banner */}

@@ -11,6 +11,10 @@ const nextConfig = {
         source: '/api/:path*',
         destination: `http://${apiHost}:${apiPort}/api/:path*`,
       },
+      {
+        source: '/static/:path*',
+        destination: `http://${apiHost}:${apiPort}/api/static/:path*`,
+      },
     ];
   },
 };

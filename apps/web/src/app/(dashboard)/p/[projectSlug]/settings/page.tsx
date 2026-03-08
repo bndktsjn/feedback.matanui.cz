@@ -90,7 +90,7 @@ export default function ProjectSettingsPage() {
     if (!project?.settings?.apiKey) return '';
     const origin =
       typeof window !== 'undefined' ? window.location.origin : 'https://feedback.matanui.cz';
-    return `<script src="${origin}/static/overlay.js" data-key="${project.settings.apiKey}"></script>`;
+    return `<script src="${origin}/api/static/overlay.js" data-key="${project.settings.apiKey}"></script>`;
   }
 
   function copyToClipboard(text: string) {

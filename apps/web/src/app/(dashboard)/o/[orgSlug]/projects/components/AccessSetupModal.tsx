@@ -47,7 +47,7 @@ export default function AccessSetupModal({
 
   // Embed code
   const embedCode = apiKey
-    ? `<script src="${typeof window !== 'undefined' ? window.location.origin : ''}/static/overlay.js" data-key="${apiKey}"></script>`
+    ? `<script src="${typeof window !== 'undefined' ? window.location.origin : ''}/api/static/overlay.js" data-key="${apiKey}"></script>`
     : '';
 
   // Clean up message listener

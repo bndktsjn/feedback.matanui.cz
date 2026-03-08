@@ -16,7 +16,7 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: '10mb' });
   app.useBodyParser('urlencoded', { limit: '10mb' });
 
-  app.useStaticAssets(join(__dirname, '..', 'public'), { prefix: '/static/' });
+  app.useStaticAssets(join(__dirname, '..', 'public'), { prefix: '/api/static/' });
 
   // Trust proxy headers (X-Forwarded-Proto) from Cloudflare tunnel → Apache → API
   app.set('trust proxy', 1);

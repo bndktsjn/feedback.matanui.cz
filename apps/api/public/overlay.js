@@ -395,7 +395,7 @@
     function sendReady() {
       post({
         type: FB + 'READY',
-        pageUrl: location.href.split('?')[0].split('#')[0].replace(/\/+$/, ''),
+        pageUrl: location.href.split('#')[0].replace(/\/+$/, ''),
         pageTitle: document.title,
         docWidth: document.documentElement.scrollWidth,
         docHeight: document.documentElement.scrollHeight,
@@ -436,7 +436,7 @@
         lastBridgeUrl = location.href;
         post({
           type: FB + 'NAVIGATED',
-          pageUrl: location.href.split('?')[0].split('#')[0].replace(/\/+$/, ''),
+          pageUrl: location.href.split('#')[0].replace(/\/+$/, ''),
           pageTitle: document.title
         });
         // After navigation, page dimensions likely changed

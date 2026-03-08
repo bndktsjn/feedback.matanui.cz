@@ -16,6 +16,8 @@ interface ProjectContext {
   orgId: string;
   orgSlug: string;
   orgName: string;
+  orgRole: string;
+  currentUserRole: string;
 }
 
 function NavLink({
@@ -91,6 +93,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       : null;
 
   // Load user + orgs
+  const refreshOrgs = useCallback(async () => {
+    try {
+      const ol = await orgs.list();
+      setOrgList(ol);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     async function init() {
       try {
@@ -116,6 +125,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             name: string;
             slug: string;
             orgId: string;
+            currentUserRole: string;
           }[];
           const found = projList.find((p) => p.slug === slug);
           if (found) {
@@ -126,6 +136,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               orgId: org.id,
               orgSlug: org.slug,
               orgName: org.name,
+              orgRole: org.role,
+              currentUserRole: found.currentUserRole || 'member',
             });
             return;
           }
@@ -148,6 +160,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setProjectCtx(null);
     }
   }, [projectSlug, orgList, projectCtx, resolveProject]);
+
+  // Listen for role-changed events to refresh org list and project context
+  useEffect(() => {
+    function handleRoleChanged() {
+      refreshOrgs();
+      if (projectSlug && orgList.length > 0) {
+        resolveProject(projectSlug, orgList);
+      }
+    }
+    window.addEventListener('role-changed', handleRoleChanged);
+    return () => window.removeEventListener('role-changed', handleRoleChanged);
+  }, [refreshOrgs, projectSlug, orgList, resolveProject]);
 
   // Close org switcher on outside click
   useEffect(() => {
@@ -176,9 +200,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isInProject = !!projectSlug && !!projectCtx;
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen">
       {/* ── Sidebar ── */}
-      <aside className="flex w-60 flex-col border-r border-gray-200 bg-white">
+      <aside className="flex w-60 shrink-0 flex-col border-r border-gray-200 bg-white">
         {/* Logo */}
         <div className="flex h-14 items-center border-b border-gray-100 px-4">
           <Link href="/orgs" className="flex items-center gap-2">
@@ -285,13 +309,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <span className="flex h-4 w-4 items-center justify-center text-current opacity-60">{Icons.monitor}</span>
                 Workspace
               </button>
-              <NavLink
-                href={`/p/${projectCtx.slug}/settings`}
-                active={pathname.endsWith('/settings')}
-                icon={Icons.gear}
-              >
-                Settings
-              </NavLink>
+              {projectCtx.currentUserRole === 'admin' && (
+                <>
+                  <NavLink
+                    href={`/p/${projectCtx.slug}/settings/members`}
+                    active={pathname.includes('/settings/members')}
+                    icon={Icons.users}
+                  >
+                    Members
+                  </NavLink>
+                  <NavLink
+                    href={`/p/${projectCtx.slug}/settings`}
+                    active={pathname.endsWith('/settings')}
+                    icon={Icons.gear}
+                  >
+                    Settings
+                  </NavLink>
+                </>
+              )}
             </>
           )}
 
@@ -306,13 +341,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               >
                 Projects
               </NavLink>
-              <NavLink
-                href={`/o/${currentOrg.slug}/members`}
-                active={pathname.includes('/members')}
-                icon={Icons.users}
-              >
-                Members
-              </NavLink>
+              {(currentOrg.role === 'owner' || currentOrg.role === 'admin') && (
+                <NavLink
+                  href={`/o/${currentOrg.slug}/members`}
+                  active={pathname.includes('/members')}
+                  icon={Icons.users}
+                >
+                  Members
+                </NavLink>
+              )}
             </>
           )}
 
@@ -347,20 +384,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <p className="truncate text-sm font-medium text-gray-900 group-hover:text-blue-600">
                   {user?.displayName}
                 </p>
+                <p className="truncate text-xs text-gray-500">
+                  {user?.email}
+                </p>
               </Link>
-              <button
-                onClick={handleLogout}
-                className="text-xs text-gray-400 hover:text-gray-600"
-              >
-                Sign out
-              </button>
             </div>
+            <button
+              onClick={handleLogout}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              title="Sign out"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
           </div>
         </div>
       </aside>
 
       {/* ── Main content ── */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Breadcrumb */}
         {(currentOrg || isInProject) && (
           <header className="flex h-12 items-center border-b border-gray-100 bg-white px-6">

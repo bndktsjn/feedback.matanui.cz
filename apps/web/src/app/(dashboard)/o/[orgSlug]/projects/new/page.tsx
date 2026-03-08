@@ -15,6 +15,7 @@ export default function NewProjectPage() {
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [addMembers, setAddMembers] = useState(false);
 
   useEffect(() => {
     orgs.list().then((list) => {
@@ -34,7 +35,11 @@ export default function NewProjectPage() {
         baseUrl,
         description: description || undefined,
       })) as { slug: string };
-      router.push(`/p/${project.slug}/threads`);
+      if (addMembers) {
+        router.push(`/p/${project.slug}/settings/members`);
+      } else {
+        router.push(`/p/${project.slug}/threads`);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create project');
     } finally {
@@ -92,13 +97,32 @@ export default function NewProjectPage() {
           />
         </div>
 
+        {/* Member assignment hint */}
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <label className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              checked={addMembers}
+              onChange={(e) => setAddMembers(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <span className="text-sm font-medium text-gray-900">Add team members after creation</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Organization owners and admins automatically have access. Check this to assign
+                specific members right after creating the project.
+              </p>
+            </div>
+          </label>
+        </div>
+
         <div className="flex gap-3">
           <button
             type="submit"
             disabled={loading}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? 'Creating...' : 'Create'}
+            {loading ? 'Creating...' : addMembers ? 'Create & Add Members' : 'Create'}
           </button>
           <Link
             href={`/o/${orgSlug}/projects`}

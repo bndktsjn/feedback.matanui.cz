@@ -375,6 +375,76 @@
     window.addEventListener('hashchange', checkNav);
     setInterval(checkNav, 500);
 
+    // -- Screenshot capture (runs in-page, so no cross-origin issues) --
+    var h2cLoaded = null; // cached promise
+    function loadHtml2Canvas() {
+      if (h2cLoaded) return h2cLoaded;
+      if (window.html2canvas) { h2cLoaded = Promise.resolve(window.html2canvas); return h2cLoaded; }
+      h2cLoaded = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = function () { resolve(window.html2canvas); };
+        s.onerror = function () { reject(new Error('Failed to load html2canvas')); };
+        document.head.appendChild(s);
+      });
+      return h2cLoaded;
+    }
+
+    function captureAndSend(data) {
+      var reqId = data.reqId || '';
+      loadHtml2Canvas().then(function (html2canvas) {
+        return html2canvas(document.body, {
+          useCORS: true,
+          allowTaint: false,
+          logging: false,
+          scale: window.devicePixelRatio || 1,
+          width: window.innerWidth,
+          height: window.innerHeight,
+          scrollX: -window.scrollX,
+          scrollY: -window.scrollY,
+          windowWidth: window.innerWidth,
+          windowHeight: window.innerHeight
+        });
+      }).then(function (canvas) {
+        // Draw pin marker if coordinates provided
+        if (data.pinXPct != null && data.pinYPct != null) {
+          var ctx = canvas.getContext('2d');
+          if (ctx) {
+            var dpr = window.devicePixelRatio || 1;
+            var docW = document.documentElement.scrollWidth;
+            var docH = document.documentElement.scrollHeight;
+            var absX = (data.pinXPct / 100) * docW - window.scrollX;
+            var absY = (data.pinYPct / 100) * docH - window.scrollY;
+            var cx = absX * dpr;
+            var cy = absY * dpr;
+            if (cx >= 0 && cx <= canvas.width && cy >= 0 && cy <= canvas.height) {
+              var r = 12 * dpr;
+              ctx.save();
+              ctx.translate(cx, cy);
+              ctx.beginPath();
+              ctx.arc(0, -r, r, Math.PI * 0.75, Math.PI * 2.25);
+              ctx.lineTo(0, r * 0.4);
+              ctx.closePath();
+              ctx.fillStyle = '#f97316';
+              ctx.fill();
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 2 * dpr;
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.arc(0, -r, r * 0.35, 0, Math.PI * 2);
+              ctx.fillStyle = '#ffffff';
+              ctx.fill();
+              ctx.restore();
+            }
+          }
+        }
+        var dataUrl = canvas.toDataURL('image/png', 0.92);
+        post({ type: FB + 'SCREENSHOT_RESULT', reqId: reqId, dataUrl: dataUrl });
+      }).catch(function (err) {
+        post({ type: FB + 'SCREENSHOT_RESULT', reqId: reqId, error: err.message });
+      });
+    }
+
     // -- Accept commands from parent --
     window.addEventListener('message', function (e) {
       if (!e.data || typeof e.data.type !== 'string') return;
@@ -384,6 +454,9 @@
       if (e.data.type === FB + 'INIT') {
         // Parent requested handshake — re-send READY
         sendReady();
+      }
+      if (e.data.type === FB + 'CAPTURE_SCREENSHOT') {
+        captureAndSend(e.data);
       }
     });
 

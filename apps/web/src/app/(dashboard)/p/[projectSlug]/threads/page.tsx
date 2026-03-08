@@ -9,6 +9,7 @@ interface ProjectInfo {
   name: string;
   slug: string;
   orgId: string;
+  currentUserRole?: string;
 }
 
 const STATUSES = [
@@ -59,13 +60,37 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
+/** Render text with @[Name](id) mentions styled as blue inline badges */
+function renderWithMentions(text: string): React.ReactNode {
+  const mentionRegex = /@\[([^\]]+)\]\([^)]+\)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = mentionRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <span key={key++} className="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">
+        @{match[1]}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : text;
+}
+
 function Avatar({ user, size = 'sm' }: { user?: { displayName: string; avatarUrl: string | null }; size?: 'sm' | 'md' }) {
   const cls = size === 'md' ? 'h-8 w-8 text-xs' : 'h-6 w-6 text-[10px]';
   if (user?.avatarUrl) {
     return <img src={user.avatarUrl} alt={user.displayName} title={user.displayName} className={`${cls} rounded-full object-cover ring-1 ring-gray-200`} />;
   }
   return (
-    <div title={user?.displayName || 'Anonymous'} className={`${cls} flex items-center justify-center rounded-full bg-gray-100 font-bold text-gray-500 ring-1 ring-gray-200`}>
+    <div title={user?.displayName || 'Anonymous'} className={`${cls} flex items-center justify-center rounded-full bg-blue-100 font-bold text-blue-600 ring-1 ring-blue-200`}>
       {user?.displayName?.charAt(0)?.toUpperCase() || '?'}
     </div>
   );
@@ -77,6 +102,7 @@ export default function ThreadsPage() {
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string>('member');
   const [threadList, setThreadList] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
@@ -122,6 +148,7 @@ export default function ThreadsPage() {
           const found = projList.find((p) => p.slug === projectSlug);
           if (found) {
             setProject(found);
+            setCurrentUserRole(found.currentUserRole || (org.role === 'owner' || org.role === 'admin' ? 'admin' : 'member'));
             await loadThreads(found);
             break;
           }
@@ -225,6 +252,7 @@ export default function ThreadsPage() {
   if (loading) return <div className="text-gray-500">Loading threads...</div>;
   if (!project) return <div className="text-gray-500">Project not found.</div>;
 
+  const isAdmin = currentUserRole === 'admin';
   const activeFilters = [statusFilter, priorityFilter, typeFilter].filter(Boolean).length;
 
   return (
@@ -377,21 +405,24 @@ export default function ThreadsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
               </button>
-              {/* Resolve toggle */}
-              <button
-                onClick={() => handleResolveToggle(selectedThread)}
-                className={`flex h-7 w-7 items-center justify-center rounded-full border transition ${
-                  selectedThread.status === 'resolved'
-                    ? 'border-green-600 bg-green-600 text-white hover:border-amber-500 hover:bg-amber-50 hover:text-amber-600'
-                    : 'border-gray-300 text-gray-400 hover:border-green-600 hover:bg-green-50 hover:text-green-600'
-                }`}
-                title={selectedThread.status === 'resolved' ? 'Reopen' : 'Resolve'}
-              >
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </button>
-              {/* Thread menu */}
+              {/* Resolve toggle — only for author or admin */}
+              {(isAdmin || (currentUser && selectedThread.author?.id === currentUser.id)) && (
+                <button
+                  onClick={() => handleResolveToggle(selectedThread)}
+                  className={`flex h-7 w-7 items-center justify-center rounded-full border transition ${
+                    selectedThread.status === 'resolved'
+                      ? 'border-green-600 bg-green-600 text-white hover:border-amber-500 hover:bg-amber-50 hover:text-amber-600'
+                      : 'border-gray-300 text-gray-400 hover:border-green-600 hover:bg-green-50 hover:text-green-600'
+                  }`}
+                  title={selectedThread.status === 'resolved' ? 'Reopen' : 'Resolve'}
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+              )}
+              {/* Thread menu — only for author or admin */}
+              {(isAdmin || (currentUser && selectedThread.author?.id === currentUser.id)) && (
               <div className="relative">
                 <button
                   onClick={() => setMenuOpenId(menuOpenId === 'thread' ? null : 'thread')}
@@ -434,6 +465,7 @@ export default function ThreadsPage() {
                   </div>
                 )}
               </div>
+              )}
               {/* Close */}
               <button
                 onClick={() => setSelectedThread(null)}
@@ -457,15 +489,21 @@ export default function ThreadsPage() {
                 {/* Title + status */}
                 <h2 className="text-lg font-semibold text-gray-900">{selectedThread.title}</h2>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <select
-                    value={selectedThread.status}
-                    onChange={(e) => handleStatusChange(selectedThread, e.target.value)}
-                    className={`rounded-full border-0 px-2 py-0.5 text-xs font-medium ${statusInfo(selectedThread.status).color} cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500`}
-                  >
-                    {STATUSES.map((s) => (
-                      <option key={s.value} value={s.value}>{s.label}</option>
-                    ))}
-                  </select>
+                  {(isAdmin || (currentUser && selectedThread.author?.id === currentUser.id)) ? (
+                    <select
+                      value={selectedThread.status}
+                      onChange={(e) => handleStatusChange(selectedThread, e.target.value)}
+                      className={`rounded-full border-0 px-2 py-0.5 text-xs font-medium ${statusInfo(selectedThread.status).color} cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                    >
+                      {STATUSES.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusInfo(selectedThread.status).color}`}>
+                      {statusInfo(selectedThread.status).label}
+                    </span>
+                  )}
                   <span className={`text-xs font-medium ${priorityInfo(selectedThread.priority).color}`}>
                     {selectedThread.priority}
                   </span>
@@ -486,7 +524,7 @@ export default function ThreadsPage() {
                       <p className="text-[10px] text-gray-400">{timeAgo(selectedThread.createdAt)}</p>
                     </div>
                   </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{selectedThread.message}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{renderWithMentions(selectedThread.message)}</p>
                 </div>
 
                 {/* Screenshot */}
@@ -527,6 +565,8 @@ export default function ThreadsPage() {
                     <div className="mt-2 space-y-2">
                       {selectedThread.comments.map((c: Comment) => {
                         const isOwn = currentUser && c.author?.id === currentUser.id;
+                        const canEditComment = !!isOwn;
+                        const canDeleteComment = !!isOwn || isAdmin;
                         return (
                           <div key={c.id} className="rounded-lg border border-gray-100 bg-gray-50 p-2.5">
                             <div className="flex items-start justify-between gap-1">
@@ -537,26 +577,30 @@ export default function ThreadsPage() {
                                   <p className="text-[10px] text-gray-400">{timeAgo(c.createdAt)}</p>
                                 </div>
                               </div>
-                              {isOwn && (
+                              {(canEditComment || canDeleteComment) && (
                                 <div className="flex shrink-0 gap-0.5">
-                                  <button
-                                    onClick={() => { setEditingComment(c.id); setEditContent(c.content); }}
-                                    className="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-gray-200 hover:text-gray-600"
-                                    title="Edit"
-                                  >
-                                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                  </button>
-                                  <button
-                                    onClick={() => deleteComment(c.id)}
-                                    className="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-red-50 hover:text-red-500"
-                                    title="Delete"
-                                  >
-                                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                  </button>
+                                  {canEditComment && (
+                                    <button
+                                      onClick={() => { setEditingComment(c.id); setEditContent(c.content); }}
+                                      className="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-gray-200 hover:text-gray-600"
+                                      title="Edit"
+                                    >
+                                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                  {canDeleteComment && (
+                                    <button
+                                      onClick={() => deleteComment(c.id)}
+                                      className="flex h-5 w-5 items-center justify-center rounded text-gray-300 hover:bg-red-50 hover:text-red-500"
+                                      title="Delete"
+                                    >
+                                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -575,7 +619,7 @@ export default function ThreadsPage() {
                                 </div>
                               </div>
                             ) : (
-                              <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-700">{c.content}</p>
+                              <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-700">{renderWithMentions(c.content)}</p>
                             )}
                           </div>
                         );

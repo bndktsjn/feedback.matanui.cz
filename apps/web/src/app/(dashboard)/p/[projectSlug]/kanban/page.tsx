@@ -247,7 +247,7 @@ function ThreadCard({
           ) : (
             <div
               title={thread.author?.displayName || 'Anonymous'}
-              className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[8px] font-bold text-gray-500"
+              className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-[8px] font-bold text-blue-600"
             >
               {thread.author?.displayName?.charAt(0)?.toUpperCase() || '?'}
             </div>

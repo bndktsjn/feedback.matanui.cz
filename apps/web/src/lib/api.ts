@@ -231,6 +231,26 @@ export const attachments = {
   },
 };
 
+// Project Members
+export const projectMembers = {
+  list: (projectId: string) =>
+    apiFetch<ProjectMember[]>(`/projects/${projectId}/members`),
+  available: (projectId: string) =>
+    apiFetch<AvailableOrgMember[]>(`/projects/${projectId}/members/available`),
+  add: (projectId: string, data: { userId: string; role: string }) =>
+    apiFetch<ProjectMember>(`/projects/${projectId}/members`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (projectId: string, memberId: string, data: { role: string }) =>
+    apiFetch<ProjectMember>(`/projects/${projectId}/members/${memberId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  remove: (projectId: string, memberId: string) =>
+    apiFetch(`/projects/${projectId}/members/${memberId}`, { method: 'DELETE' }),
+};
+
 // User search (for @mentions)
 export const users = {
   search: (projectId: string, query?: string) => {
@@ -409,4 +429,32 @@ export interface Project {
   settings: ProjectSettings;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProjectMember {
+  id: string;
+  projectId: string;
+  userId: string;
+  role: string;
+  joinedAt: string;
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
+}
+
+export interface AvailableOrgMember {
+  id: string;
+  userId: string;
+  orgRole: string;
+  assigned: boolean;
+  projectRole: string | null;
+  user: {
+    id: string;
+    email: string;
+    displayName: string;
+    avatarUrl: string | null;
+  };
 }

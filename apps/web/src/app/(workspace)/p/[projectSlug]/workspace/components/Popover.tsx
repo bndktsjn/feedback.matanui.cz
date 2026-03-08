@@ -9,6 +9,31 @@ import { IconClose, IconCheck, IconSend, IconPencil, IconTrash, IconImage } from
 import Composer from './Composer';
 import type { StagedFile } from './Composer';
 import ScreenshotEditor from './ScreenshotEditor';
+import React from 'react';
+
+/** Render text with @[Name](id) mentions styled as blue inline badges */
+function renderWithMentions(text: string): React.ReactNode {
+  const mentionRegex = /@\[([^\]]+)\]\([^)]+\)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = mentionRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <span key={key++} className="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">
+        @{match[1]}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : text;
+}
 
 /* ── Preview popover (hover) ─────────────────────────────────── */
 
@@ -48,7 +73,7 @@ export function PreviewPopover({ thread, pinRect, panelOpen }: PreviewPopoverPro
         guestEmail={thread.guestEmail}
         createdAt={thread.createdAt}
       />
-      <p className="mt-1.5 text-xs text-gray-700 line-clamp-3">{thread.message}</p>
+      <p className="mt-1.5 text-xs text-gray-700 line-clamp-3">{renderWithMentions(thread.message)}</p>
       {thread._count.comments > 0 && (
         <p className="mt-1 text-[10px] text-gray-400">
           {thread._count.comments} {thread._count.comments === 1 ? 'reply' : 'replies'}
@@ -310,7 +335,7 @@ export function ThreadPopover({
               guestEmail={thread.guestEmail}
               createdAt={thread.createdAt}
             />
-            <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-800">{thread.message}</p>
+            <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-800">{renderWithMentions(thread.message)}</p>
             {/* Screenshot preview */}
             {thread.screenshotUrl && (
               <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 relative group">
@@ -390,7 +415,7 @@ export function ThreadPopover({
                         </div>
                       </div>
                     ) : (
-                      <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{c.content}</p>
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{renderWithMentions(c.content)}</p>
                     )}
                   </div>
                 ))}

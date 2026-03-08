@@ -77,7 +77,7 @@ export default function AccessSetupModal({
       const sendInit = () => {
         try {
           iframeRef.current?.contentWindow?.postMessage({ type: 'FB_INIT' }, '*');
-        } catch {}
+        } catch { /* ignore postMessage errors */ }
       };
       setTimeout(sendInit, 300);
       setTimeout(sendInit, 1000);
@@ -283,7 +283,7 @@ export default function AccessSetupModal({
               </div>
               <div>
                 <p className="text-sm font-medium text-red-700">Script not detected yet</p>
-                <p className="text-xs text-red-600/70">Make sure you've added the script and deployed.</p>
+                <p className="text-xs text-red-600/70">Make sure you&apos;ve added the script and deployed.</p>
               </div>
             </div>
           )}

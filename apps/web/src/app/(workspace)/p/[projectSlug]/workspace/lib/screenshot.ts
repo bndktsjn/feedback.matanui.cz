@@ -2,8 +2,12 @@ import html2canvas from 'html2canvas';
 
 /**
  * Capture a screenshot of the iframe's visible content.
- * Uses html2canvas on the iframe's document body (same-origin only).
- * Falls back gracefully if cross-origin or capture fails.
+ *
+ * Strategy:
+ *  1. Try direct html2canvas on iframe's document body (same-origin only).
+ *  2. Fall back to bridge-based capture via postMessage — the overlay.js
+ *     running inside the target page captures the screenshot and sends
+ *     the result back as a base64 data URL.
  *
  * @param iframeEl  The iframe element to capture
  * @param pinXPct   Pin X position as percentage (0-100)
@@ -15,12 +19,24 @@ export async function captureScreenshot(
   pinXPct?: number,
   pinYPct?: number,
 ): Promise<Blob | null> {
+  // Strategy 1: Direct DOM access (same-origin)
+  const directResult = await captureDirectly(iframeEl, pinXPct, pinYPct);
+  if (directResult) return directResult;
+
+  // Strategy 2: Bridge-based capture (cross-origin with overlay.js)
+  console.log('Screenshot: falling back to bridge capture');
+  return capturViaBridge(iframeEl, pinXPct, pinYPct);
+}
+
+/** Same-origin capture using html2canvas on iframe document */
+async function captureDirectly(
+  iframeEl: HTMLIFrameElement,
+  pinXPct?: number,
+  pinYPct?: number,
+): Promise<Blob | null> {
   try {
     const iframeDoc = iframeEl.contentDocument;
-    if (!iframeDoc?.body) {
-      console.warn('Screenshot: cannot access iframe document (cross-origin?)');
-      return null;
-    }
+    if (!iframeDoc?.body) return null;
 
     const canvas = await html2canvas(iframeDoc.body, {
       useCORS: true,
@@ -43,10 +59,65 @@ export async function captureScreenshot(
     return new Promise<Blob | null>((resolve) => {
       canvas.toBlob((blob) => resolve(blob), 'image/png', 0.92);
     });
-  } catch (err) {
-    console.error('Screenshot capture failed:', err);
+  } catch {
     return null;
   }
+}
+
+/** Cross-origin capture via overlay.js bridge postMessage */
+function capturViaBridge(
+  iframeEl: HTMLIFrameElement,
+  pinXPct?: number,
+  pinYPct?: number,
+): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const reqId = `ss-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      console.warn('Screenshot: bridge capture timed out');
+      resolve(null);
+    }, 8000);
+
+    function handler(e: MessageEvent) {
+      const d = e.data;
+      if (!d || d.type !== 'FB_SCREENSHOT_RESULT' || d.reqId !== reqId) return;
+      window.removeEventListener('message', handler);
+      clearTimeout(timeout);
+
+      if (d.error || !d.dataUrl) {
+        console.warn('Screenshot: bridge capture failed:', d.error);
+        resolve(null);
+        return;
+      }
+
+      // Convert data URL to Blob
+      try {
+        const byteString = atob(d.dataUrl.split(',')[1]);
+        const mimeString = d.dataUrl.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+        resolve(new Blob([ab], { type: mimeString }));
+      } catch (err) {
+        console.error('Screenshot: failed to decode bridge result:', err);
+        resolve(null);
+      }
+    }
+
+    window.addEventListener('message', handler);
+
+    // Send capture request to iframe bridge
+    try {
+      iframeEl.contentWindow?.postMessage(
+        { type: 'FB_CAPTURE_SCREENSHOT', reqId, pinXPct, pinYPct },
+        '*',
+      );
+    } catch {
+      clearTimeout(timeout);
+      window.removeEventListener('message', handler);
+      resolve(null);
+    }
+  });
 }
 
 /**

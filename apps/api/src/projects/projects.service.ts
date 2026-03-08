@@ -44,19 +44,51 @@ export class ProjectsService {
     });
   }
 
-  async findAllForOrg(orgId: string): Promise<Record<string, unknown>[]> {
-    return this.prisma.project.findMany({
-      where: { orgId, deletedAt: null },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        baseUrl: true,
-        description: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+  async findAllForOrg(orgId: string, userId?: string, orgRole?: string): Promise<Record<string, unknown>[]> {
+    const isOrgAdmin = orgRole === 'owner' || orgRole === 'admin';
+
+    // Visibility rules:
+    //  - Org owners/admins see ALL projects (they have implicit admin access)
+    //  - Org members see ONLY projects they are explicitly assigned to
+    const where: Record<string, unknown> = { orgId, deletedAt: null };
+    if (userId && !isOrgAdmin) {
+      where.members = { some: { userId } };
+    }
+
+    // If we have a userId, also fetch the user's explicit project role
+    const selectFields: Record<string, unknown> = {
+      id: true,
+      name: true,
+      slug: true,
+      baseUrl: true,
+      description: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+    if (userId) {
+      selectFields.members = {
+        where: { userId },
+        select: { role: true },
+        take: 1,
+      };
+    }
+
+    const projectList = await this.prisma.project.findMany({
+      where,
+      select: selectFields,
       orderBy: { createdAt: 'desc' },
+    });
+
+    // Flatten: add currentUserRole to each project, remove nested members array
+    return projectList.map((p) => {
+      const { members: memberArr, ...rest } = p as Record<string, unknown> & {
+        members?: { role: string }[];
+      };
+      // Org owners/admins always get admin; members get their explicit role
+      const currentUserRole = isOrgAdmin
+        ? 'admin'
+        : memberArr?.[0]?.role || 'member';
+      return { ...rest, currentUserRole };
     });
   }
 

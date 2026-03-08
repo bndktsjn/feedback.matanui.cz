@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto, UpdateProjectDto } from './dto';
 import { SessionGuard } from '../auth/guards/session.guard';
@@ -18,6 +18,7 @@ export class ProjectsController {
 
   @Post()
   @UseGuards(CsrfGuard)
+  @Roles('owner', 'admin')
   async create(
     @Param('orgId') orgId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -27,8 +28,12 @@ export class ProjectsController {
   }
 
   @Get()
-  async findAll(@Param('orgId') orgId: string): Promise<Record<string, unknown>[]> {
-    return this.projectsService.findAllForOrg(orgId);
+  async findAll(
+    @Param('orgId') orgId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: { orgMember?: { role: string } },
+  ): Promise<Record<string, unknown>[]> {
+    return this.projectsService.findAllForOrg(orgId, user.id, req.orgMember?.role);
   }
 
   @Get(':projectId')

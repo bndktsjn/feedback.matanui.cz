@@ -110,6 +110,7 @@ export default function MembersPage() {
       showToast('Role updated', 'success');
       const memberList = await orgs.members.list(org.id);
       setMembers(memberList);
+      window.dispatchEvent(new Event('role-changed'));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to update role';
       showToast(msg, 'error');
@@ -124,6 +125,7 @@ export default function MembersPage() {
       showToast('Member removed', 'success');
       const memberList = await orgs.members.list(org.id);
       setMembers(memberList);
+      window.dispatchEvent(new Event('role-changed'));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to remove member';
       showToast(msg, 'error');
@@ -242,7 +244,7 @@ export default function MembersPage() {
                 <tr key={member.id} className="hover:bg-gray-50">
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-sm font-medium text-gray-600">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-medium text-blue-600">
                         {member.user.displayName.charAt(0).toUpperCase()}
                       </div>
                       <div>

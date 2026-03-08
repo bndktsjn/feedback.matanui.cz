@@ -41,6 +41,55 @@ interface ComposerProps {
   onContentChange?: (hasContent: boolean) => void;
 }
 
+/* ── Helpers ─────────────────────────────────────────────────── */
+
+/** Serialize contenteditable HTML → plain text with @[Name](id) mentions */
+function serializeEditor(el: HTMLElement): string {
+  let result = '';
+  el.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      result += node.textContent || '';
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const elem = node as HTMLElement;
+      if (elem.dataset.mentionId) {
+        const name = elem.textContent?.replace(/^@/, '') || '';
+        result += `@[${name}](${elem.dataset.mentionId})`;
+      } else if (elem.tagName === 'BR') {
+        result += '\n';
+      } else {
+        result += serializeEditor(elem);
+      }
+    }
+  });
+  return result;
+}
+
+/** Get plain text content from contenteditable (for length checks) */
+function getPlainText(el: HTMLElement): string {
+  return el.innerText || '';
+}
+
+/** Get text before the cursor in a contenteditable element */
+function getTextBeforeCursor(): string {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return '';
+  const range = sel.getRangeAt(0);
+  const preRange = range.cloneRange();
+  preRange.selectNodeContents(range.startContainer.parentElement?.closest('[contenteditable]') || range.startContainer);
+  preRange.setEnd(range.startContainer, range.startOffset);
+  return preRange.toString();
+}
+
+/** Collect all mention IDs from the editor DOM */
+function collectMentionIds(el: HTMLElement): string[] {
+  const ids: string[] = [];
+  el.querySelectorAll('[data-mention-id]').forEach((span) => {
+    const id = (span as HTMLElement).dataset.mentionId;
+    if (id && !ids.includes(id)) ids.push(id);
+  });
+  return ids;
+}
+
 /* ── Composer ───────────────────────────────────────────────── */
 
 export default function Composer({
@@ -54,12 +103,10 @@ export default function Composer({
   composerRef,
   onContentChange,
 }: ComposerProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [content, setContent] = useState('');
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
-  const [mentionIds, setMentionIds] = useState<string[]>([]);
-  const [focused, setFocused] = useState(false);
+  const [hasContent, setHasContent] = useState(false);
 
   // Mention autocomplete state
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -69,7 +116,6 @@ export default function Composer({
   const [mentionPos, setMentionPos] = useState<{ top: number; left: number } | null>(null);
   const mentionTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const hasContent = content.trim().length > 0 || stagedFiles.length > 0;
   const showActions = alwaysShowActions || hasContent;
 
   // Notify parent of content changes
@@ -79,46 +125,37 @@ export default function Composer({
 
   // Auto-focus
   useEffect(() => {
-    if (autoFocus) textareaRef.current?.focus();
+    if (autoFocus && editorRef.current) editorRef.current.focus();
   }, [autoFocus]);
 
   // Expose imperative handle
   useEffect(() => {
     if (!composerRef) return;
     const handle: ComposerHandle = {
-      focus: () => textareaRef.current?.focus(),
-      reset: () => { setContent(''); setStagedFiles([]); setMentionIds([]); },
-      getValue: () => content,
+      focus: () => editorRef.current?.focus(),
+      reset: () => {
+        if (editorRef.current) editorRef.current.innerHTML = '';
+        setStagedFiles([]);
+        setHasContent(false);
+      },
+      getValue: () => editorRef.current ? serializeEditor(editorRef.current) : '',
       getStagedFiles: () => stagedFiles,
-      getMentionIds: () => mentionIds,
+      getMentionIds: () => editorRef.current ? collectMentionIds(editorRef.current) : [],
     };
     if (typeof composerRef === 'function') composerRef(handle);
     else if (composerRef && 'current' in composerRef) (composerRef as React.MutableRefObject<ComposerHandle | null>).current = handle;
-  }, [composerRef, content, stagedFiles, mentionIds]);
-
-  /* ── Auto-resize textarea ─────────────────────────────────── */
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = 'auto';
-    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
-  }, [content]);
+  }, [composerRef, stagedFiles, hasContent]);
 
   /* ── Mention detection ────────────────────────────────────── */
-  const detectMention = useCallback((text: string, cursorPos: number) => {
-    const before = text.slice(0, cursorPos);
-    const atIdx = before.lastIndexOf('@');
-    if (atIdx === -1 || (atIdx > 0 && /\S/.test(before[atIdx - 1]))) {
+  const detectMention = useCallback(() => {
+    const textBefore = getTextBeforeCursor();
+    const atIdx = textBefore.lastIndexOf('@');
+    if (atIdx === -1 || (atIdx > 0 && /\S/.test(textBefore[atIdx - 1]))) {
       setMentionQuery(null);
       return;
     }
-    const query = before.slice(atIdx + 1);
-    // Close mention on space or end-of-word characters
-    if (/\s/.test(query) || /[.,!?;:)]/.test(query[0])) {
-      setMentionQuery(null);
-      return;
-    }
-    if (query.length > 20 || /\n/.test(query)) {
+    const query = textBefore.slice(atIdx + 1);
+    if (/\s/.test(query) || query.length > 20) {
       setMentionQuery(null);
       return;
     }
@@ -132,25 +169,20 @@ export default function Composer({
       setMentionPos(null);
       return;
     }
-    // Position popup immediately so loading state is visible
-    const ta = textareaRef.current;
-    if (ta) {
-      const rect = ta.getBoundingClientRect();
+    const el = editorRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
       setMentionPos({ top: rect.top - 4, left: rect.left });
     }
     setMentionLoading(true);
     clearTimeout(mentionTimer.current);
     mentionTimer.current = setTimeout(async () => {
-      console.log('🔍 Mention search:', { projectId, query: mentionQuery });
       try {
         const results = await usersApi.search(projectId, mentionQuery || undefined);
-        console.log('✅ Mention results:', results);
         setMentionResults(results);
         setMentionIdx(0);
-      } catch (err) {
-        console.error('❌ Mention API failed:', err);
-        // Fallback: show Guest option if API fails
-        setMentionResults([{ id: 'guest', displayName: 'Guest', email: '', avatarUrl: null }]);
+      } catch {
+        setMentionResults([]);
         setMentionIdx(0);
       } finally {
         setMentionLoading(false);
@@ -160,29 +192,59 @@ export default function Composer({
   }, [mentionQuery, projectId]);
 
   function insertMention(user: ProjectMemberUser) {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const cursorPos = ta.selectionStart;
-    const before = content.slice(0, cursorPos);
-    const atIdx = before.lastIndexOf('@');
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
+
+    const range = sel.getRangeAt(0);
+    const textNode = range.startContainer;
+    if (textNode.nodeType !== Node.TEXT_NODE) return;
+
+    const text = textNode.textContent || '';
+    const cursorOffset = range.startOffset;
+    const atIdx = text.lastIndexOf('@', cursorOffset - 1);
     if (atIdx === -1) return;
-    const mentionText = `@[${user.displayName}](${user.id})`;
-    const newContent = content.slice(0, atIdx) + mentionText + ' ' + content.slice(cursorPos);
-    setContent(newContent);
+
+    // Create mention span
+    const mention = document.createElement('span');
+    mention.dataset.mentionId = user.id;
+    mention.contentEditable = 'false';
+    mention.className = 'inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700 mx-0.5 select-none';
+    mention.textContent = `@${user.displayName}`;
+
+    // Split text node and insert mention
+    const before = text.slice(0, atIdx);
+    const after = text.slice(cursorOffset);
+    const parent = textNode.parentNode!;
+
+    const beforeNode = document.createTextNode(before);
+    const afterNode = document.createTextNode(after.length ? after : '\u00A0');
+
+    parent.insertBefore(beforeNode, textNode);
+    parent.insertBefore(mention, textNode);
+    parent.insertBefore(afterNode, textNode);
+    parent.removeChild(textNode);
+
+    // Place cursor after mention
+    const newRange = document.createRange();
+    newRange.setStart(afterNode, after.length ? 0 : 1);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+
     setMentionQuery(null);
-    setMentionIds((prev) => prev.includes(user.id) ? prev : [...prev, user.id]);
-    // Set cursor after mention
-    requestAnimationFrame(() => {
-      const newPos = atIdx + mentionText.length + 1;
-      ta.setSelectionRange(newPos, newPos);
-      ta.focus();
-    });
+    updateHasContent();
   }
 
   function closeMention() {
     setMentionQuery(null);
     setMentionResults([]);
     setMentionPos(null);
+  }
+
+  function updateHasContent() {
+    if (!editorRef.current) return;
+    const text = getPlainText(editorRef.current).trim();
+    setHasContent(text.length > 0 || stagedFiles.length > 0);
   }
 
   /* ── File staging ─────────────────────────────────────────── */
@@ -202,12 +264,19 @@ export default function Composer({
 
   /* ── Submit ───────────────────────────────────────────────── */
   function handleSubmit() {
-    if (!content.trim() || disabled || sending) return;
-    onSubmit(content.trim(), stagedFiles, mentionIds);
+    if (!editorRef.current || disabled || sending) return;
+    const content = serializeEditor(editorRef.current).trim();
+    if (!content) return;
+    const ids = collectMentionIds(editorRef.current);
+    onSubmit(content, stagedFiles, ids);
+    // Reset editor
+    editorRef.current.innerHTML = '';
+    setStagedFiles([]);
+    setHasContent(false);
   }
 
   /* ── Key handling ─────────────────────────────────────────── */
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     // Mention popup navigation
     if (mentionQuery !== null && mentionResults.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -235,13 +304,53 @@ export default function Composer({
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSubmit();
+      return;
+    }
+    // Prevent default Enter from creating divs — insert <br> instead
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      document.execCommand('insertLineBreak');
+      return;
+    }
+    // Atomic backspace for mentions
+    if (e.key === 'Backspace') {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && sel.isCollapsed) {
+        const range = sel.getRangeAt(0);
+        const node = range.startContainer;
+        // If cursor is right after a mention span
+        if (node.nodeType === Node.TEXT_NODE && range.startOffset === 0) {
+          const prev = node.previousSibling as HTMLElement | null;
+          if (prev?.dataset?.mentionId) {
+            e.preventDefault();
+            prev.remove();
+            updateHasContent();
+            return;
+          }
+        }
+        // If cursor is inside editor and previous sibling of cursor container is mention
+        if (node === editorRef.current && range.startOffset > 0) {
+          const child = editorRef.current.childNodes[range.startOffset - 1] as HTMLElement;
+          if (child?.dataset?.mentionId) {
+            e.preventDefault();
+            child.remove();
+            updateHasContent();
+            return;
+          }
+        }
+      }
     }
   }
 
-  function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const val = e.target.value;
-    setContent(val);
-    detectMention(val, e.target.selectionStart);
+  function handleInput() {
+    detectMention();
+    updateHasContent();
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
   }
 
   /* ── Drag & drop ──────────────────────────────────────────── */
@@ -255,9 +364,6 @@ export default function Composer({
 
   /* ── Render ───────────────────────────────────────────────── */
 
-  // Format content for display: replace @[Name](id) with styled @Name
-  const displayContent = content.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1');
-
   return (
     <div
       className={`relative rounded-lg border transition ${dragOver ? 'border-blue-400 bg-blue-50/50' : 'border-gray-200'}`}
@@ -265,24 +371,25 @@ export default function Composer({
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      {/* Input area with inline send button */}
+      {/* Contenteditable input area with inline send button */}
       <div className="relative">
-        <textarea
-          ref={textareaRef}
-          value={displayContent}
-          onChange={handleInput}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setTimeout(() => setFocused(false), 150)}
+        <div
+          ref={editorRef}
+          contentEditable={!disabled}
+          suppressContentEditableWarning
+          onInput={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          rows={1}
-          disabled={disabled}
-          className="w-full resize-none rounded-lg bg-transparent px-2.5 py-1.5 pr-9 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none disabled:opacity-50"
-          style={{ minHeight: 36 }}
+          onPaste={handlePaste}
+          onFocus={() => {}}
+          onBlur={() => setTimeout(closeMention, 150)}
+          data-placeholder={placeholder}
+          className="composer-editor w-full min-h-[36px] max-h-[120px] overflow-y-auto rounded-lg bg-transparent px-2.5 py-1.5 pr-9 text-sm text-gray-900 focus:outline-none disabled:opacity-50 empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none"
+          role="textbox"
+          aria-multiline="true"
         />
         <button
           onClick={handleSubmit}
-          disabled={!content.trim() || disabled || sending}
+          disabled={!hasContent || disabled || sending}
           className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white transition hover:bg-blue-700 disabled:opacity-30"
           title="Send (⌘+Enter)"
         >
@@ -303,19 +410,17 @@ export default function Composer({
         <button
           type="button"
           onClick={() => {
-            const ta = textareaRef.current;
-            if (!ta) return;
-            ta.focus();
-            const pos = ta.selectionStart;
-            const before = content.slice(0, pos);
-            const prefix = before.length && !/\s$/.test(before) ? ' @' : '@';
-            const newVal = content.slice(0, pos) + prefix + content.slice(pos);
-            setContent(newVal);
-            requestAnimationFrame(() => {
-              const newPos = pos + prefix.length;
-              ta.setSelectionRange(newPos, newPos);
-              detectMention(newVal, newPos);
-            });
+            const el = editorRef.current;
+            if (!el) return;
+            el.focus();
+            // Insert @ at cursor
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              const textBefore = getTextBeforeCursor();
+              const prefix = textBefore.length && !/\s$/.test(textBefore) ? ' @' : '@';
+              document.execCommand('insertText', false, prefix);
+              detectMention();
+            }
           }}
           className="flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600"
           title="Mention someone"
@@ -371,7 +476,7 @@ export default function Composer({
         </div>
       )}
 
-      {/* Mention autocomplete popup — positioned above the textarea */}
+      {/* Mention autocomplete popup — positioned above the editor */}
       {mentionPos && mentionQuery !== null && (
         typeof document !== 'undefined' ? createPortal(
           <div
@@ -379,10 +484,10 @@ export default function Composer({
             style={{ top: mentionPos.top, left: mentionPos.left, transform: 'translateY(-100%)' }}
           >
             {mentionLoading && (
-              <div className="px-3 py-2 text-xs text-gray-400">Typing…</div>
+              <div className="px-3 py-2 text-xs text-gray-400">Searching…</div>
             )}
             {!mentionLoading && mentionResults.length === 0 && (
-              <div className="px-3 py-2 text-xs text-gray-400">Type a name…</div>
+              <div className="px-3 py-2 text-xs text-gray-400">No members found</div>
             )}
             {!mentionLoading && mentionResults.map((u, i) => (
               <button
@@ -396,7 +501,7 @@ export default function Composer({
                 {u.avatarUrl ? (
                   <img src={u.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
                 ) : (
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[10px] font-medium text-gray-500">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-[10px] font-medium text-blue-600">
                     {(u.displayName || u.email)[0]?.toUpperCase()}
                   </div>
                 )}

@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@feedback/db';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddProjectMemberDto, UpdateProjectMemberDto } from './dto';
 
@@ -67,28 +68,64 @@ export class ProjectMembersService {
     });
   }
 
-  async search(projectId: string, query?: string): Promise<Record<string, unknown>[]> {
-    const where: Record<string, unknown> = { projectId };
+  private readonly logger = new Logger(ProjectMembersService.name);
+
+  async search(projectId: string, query?: string, excludeUserId?: string): Promise<Record<string, unknown>[]> {
+    // Single source of truth: query User table directly.
+    // Returns users who are explicit project members OR org owners/admins.
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { orgId: true },
+    });
+    if (!project) {
+      this.logger.warn(`search: project ${projectId} not found`);
+      return [];
+    }
+
+    // Build a strongly-typed Prisma where clause
+    const andConditions: Prisma.UserWhereInput[] = [
+      { deletedAt: null },
+      {
+        OR: [
+          { projectMemberships: { some: { projectId } } },
+          {
+            orgMemberships: {
+              some: {
+                orgId: project.orgId,
+                role: { in: ['owner', 'admin'] },
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    if (excludeUserId) {
+      andConditions.push({ id: { not: excludeUserId } });
+    }
+
     if (query && query.trim()) {
-      where.user = {
+      andConditions.push({
         OR: [
           { displayName: { contains: query.trim(), mode: 'insensitive' } },
           { email: { contains: query.trim(), mode: 'insensitive' } },
         ],
-        deletedAt: null,
-      };
+      });
     }
-    const members = await this.prisma.projectMember.findMany({
-      where,
-      include: {
-        user: {
-          select: { id: true, email: true, displayName: true, avatarUrl: true },
-        },
-      },
-      take: 10,
-      orderBy: { joinedAt: 'asc' },
-    });
-    return members.map((m) => (m as { user: Record<string, unknown> }).user);
+
+    try {
+      const users = await this.prisma.user.findMany({
+        where: { AND: andConditions },
+        select: { id: true, email: true, displayName: true, avatarUrl: true },
+        take: 10,
+        orderBy: { displayName: 'asc' },
+      });
+      this.logger.debug(`search: projectId=${projectId} query="${query || ''}" → ${users.length} results`);
+      return users;
+    } catch (err) {
+      this.logger.error(`search failed for project ${projectId}:`, err);
+      throw err;
+    }
   }
 
   async remove(projectId: string, memberId: string): Promise<void> {
@@ -98,5 +135,39 @@ export class ProjectMembersService {
     if (!member) throw new NotFoundException('Member not found');
 
     await this.prisma.projectMember.delete({ where: { id: memberId } });
+  }
+
+  /** List all org members with assignment status for project member picker */
+  async findAvailableOrgMembers(projectId: string): Promise<Record<string, unknown>[]> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { orgId: true },
+    });
+    if (!project) throw new NotFoundException('Project not found');
+
+    const existingProjectMembers = await this.prisma.projectMember.findMany({
+      where: { projectId },
+      select: { userId: true, role: true },
+    });
+    const assignedMap = new Map(existingProjectMembers.map((m) => [m.userId, m.role]));
+
+    const orgMembers = await this.prisma.organizationMember.findMany({
+      where: { orgId: project.orgId },
+      include: {
+        user: {
+          select: { id: true, email: true, displayName: true, avatarUrl: true },
+        },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+
+    return orgMembers.map((m) => ({
+      id: m.id,
+      userId: m.userId,
+      orgRole: m.role,
+      assigned: assignedMap.has(m.userId),
+      projectRole: assignedMap.get(m.userId) || null,
+      user: m.user,
+    }));
   }
 }

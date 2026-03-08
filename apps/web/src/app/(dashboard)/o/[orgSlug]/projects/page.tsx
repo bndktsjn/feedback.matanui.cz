@@ -13,6 +13,7 @@ interface Project {
   baseUrl: string;
   description?: string;
   createdAt: string;
+  currentUserRole?: string;
 }
 
 export default function ProjectsPage() {
@@ -44,6 +45,8 @@ export default function ProjectsPage() {
   if (loading) return <div className="text-gray-500">Loading projects...</div>;
   if (!org) return <div className="text-gray-500">Organization not found.</div>;
 
+  const canManage = org.role === 'owner' || org.role === 'admin';
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -51,23 +54,29 @@ export default function ProjectsPage() {
           <p className="text-sm text-gray-500">{org.name}</p>
           <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
         </div>
-        <Link
-          href={`/o/${orgSlug}/projects/new`}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          New Project
-        </Link>
+        {canManage && (
+          <Link
+            href={`/o/${orgSlug}/projects/new`}
+            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            New Project
+          </Link>
+        )}
       </div>
 
       {projectList.length === 0 ? (
         <div className="mt-8 text-center">
-          <p className="text-gray-500">No projects yet.</p>
-          <Link
-            href={`/o/${orgSlug}/projects/new`}
-            className="mt-2 inline-block text-sm font-medium text-blue-600 hover:text-blue-500"
-          >
-            Create your first project
-          </Link>
+          <p className="text-gray-500">
+            {canManage ? 'No projects yet.' : 'You have not been assigned to any projects yet.'}
+          </p>
+          {canManage && (
+            <Link
+              href={`/o/${orgSlug}/projects/new`}
+              className="mt-2 inline-block text-sm font-medium text-blue-600 hover:text-blue-500"
+            >
+              Create your first project
+            </Link>
+          )}
         </div>
       ) : (
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -91,12 +100,14 @@ export default function ProjectsPage() {
                   <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   Feedback
                 </button>
-                <Link
-                  href={`/p/${project.slug}/settings`}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
-                >
-                  Settings
-                </Link>
+                {project.currentUserRole === 'admin' && (
+                  <Link
+                    href={`/p/${project.slug}/settings`}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    Settings
+                  </Link>
+                )}
               </div>
             </div>
           ))}

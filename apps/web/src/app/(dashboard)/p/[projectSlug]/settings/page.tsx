@@ -350,6 +350,27 @@ export default function ProjectSettingsPage() {
         </div>
       </section>
 
+      {/* ── Members ── */}
+      <section className="rounded-lg border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="text-lg font-semibold text-gray-900">Members</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Manage who has access to this project and their roles.
+          </p>
+        </div>
+        <div className="p-6">
+          <a
+            href={`/p/${projectSlug}/settings/members`}
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Manage project members
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+            </svg>
+          </a>
+        </div>
+      </section>
+
       {/* ── Danger Zone ── */}
       <section className="rounded-lg border border-red-200 bg-white">
         <div className="border-b border-red-200 px-6 py-4">

@@ -1,3 +1,18 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Contenteditable composer — placeholder via :empty pseudo */
+.composer-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #9ca3af; /* gray-400 */
+  pointer-events: none;
+  display: block;
+}
+.composer-editor {
+  line-height: 1.5;
+  word-break: break-word;
+}
+.composer-editor:focus {
+  outline: none;
+}

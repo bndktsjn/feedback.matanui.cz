@@ -19,9 +19,18 @@ export class ProjectMembersController {
   @Get('search')
   async search(
     @Param('projectId') projectId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('q') q?: string,
   ): Promise<Record<string, unknown>[]> {
-    return this.membersService.search(projectId, q);
+    return this.membersService.search(projectId, q, user?.id);
+  }
+
+  @Get('available')
+  @Roles('admin')
+  async findAvailable(
+    @Param('projectId') projectId: string,
+  ): Promise<Record<string, unknown>[]> {
+    return this.membersService.findAvailableOrgMembers(projectId);
   }
 
   @Get()

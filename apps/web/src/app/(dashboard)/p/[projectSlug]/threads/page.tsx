@@ -512,7 +512,7 @@ export default function ThreadsPage() {
                       <p className="text-[10px] text-gray-400">{timeAgo(selectedThread.createdAt)}</p>
                     </div>
                   </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{renderWithMentions(selectedThread.message)}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800" dangerouslySetInnerHTML={renderWithMentions(selectedThread.message)} />
                 </div>
 
                 {/* Screenshot */}

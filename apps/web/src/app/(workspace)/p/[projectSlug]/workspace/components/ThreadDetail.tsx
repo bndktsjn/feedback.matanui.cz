@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Thread, Comment, User, threads as threadsApi, comments as commentsApi } from '@/lib/api';
 import AuthorMeta from './AuthorMeta';
 import MoreMenu, { MenuItem } from './MoreMenu';
@@ -73,6 +73,10 @@ export default function ThreadDetail({
       setThread(full);
     } catch { /* keep stale */ }
   }, [projectId, thread.id]);
+
+  // Load full thread data (with attachments, comments) on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadThread(); }, [loadThread]);
 
   async function postReply(contentArg?: string) {
     const content = (contentArg || replyContent).trim();

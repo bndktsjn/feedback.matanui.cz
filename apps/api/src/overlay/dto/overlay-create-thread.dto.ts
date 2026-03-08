@@ -68,6 +68,10 @@ export class OverlayCreateThreadDto {
 
   @IsOptional()
   @IsString()
+  screenshotDataUrl?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(255)
   authorName?: string;
 

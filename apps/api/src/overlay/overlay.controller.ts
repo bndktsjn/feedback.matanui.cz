@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { OverlayCreateThreadDto } from './dto/overlay-create-thread.dto';
 import { Prisma } from '@feedback/db';
@@ -15,7 +16,10 @@ interface ProjectFromGuard {
 @Controller('v1/overlay')
 @UseGuards(ApiKeyGuard)
 export class OverlayController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   @Get('config')
   async getConfig(@Req() req: Request): Promise<Record<string, unknown>> {
@@ -90,6 +94,24 @@ export class OverlayController {
           : {}),
       },
     });
+
+    // Handle base64 screenshot from widget mode
+    if (dto.screenshotDataUrl && dto.screenshotDataUrl.startsWith('data:image/')) {
+      try {
+        const base64Data = dto.screenshotDataUrl.split(',')[1];
+        const buffer = Buffer.from(base64Data, 'base64');
+        const mimeMatch = dto.screenshotDataUrl.match(/^data:(image\/\w+);/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+        const ext = mimeType === 'image/jpeg' ? '.jpg' : '.png';
+        const { url } = await this.storage.upload(buffer, `screenshot${ext}`, mimeType, 'screenshots');
+        await this.prisma.thread.update({
+          where: { id: thread.id },
+          data: { screenshotUrl: url },
+        });
+      } catch (err) {
+        console.error('Failed to upload widget screenshot:', err);
+      }
+    }
 
     res.status(201);
     return { id: thread.id, status: thread.status, createdAt: thread.createdAt };

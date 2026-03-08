@@ -23,6 +23,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       }
     }
 
+    // Log all 500+ errors so we can debug them
+    if (status >= 500) {
+      console.error('[ExceptionFilter] Unhandled error:', exception);
+    }
+
     response.status(status).json({
       error: {
         code,

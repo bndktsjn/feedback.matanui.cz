@@ -222,7 +222,7 @@ function ThreadCard({
         href={`/p/${projectSlug}/threads/${thread.id}`}
         className="block text-sm font-medium text-gray-900 hover:text-blue-600"
       >
-        {thread.title}
+        {renderWithMentions(thread.title)}
       </Link>
 
       {thread.message && (

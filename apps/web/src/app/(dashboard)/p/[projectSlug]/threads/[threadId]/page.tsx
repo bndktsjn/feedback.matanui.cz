@@ -118,7 +118,7 @@ export default function ThreadDetailPage() {
 
       <div className="rounded-lg border border-gray-200 bg-white p-6">
         <div className="flex items-start justify-between">
-          <h1 className="text-xl font-bold text-gray-900">{thread.title}</h1>
+          <h1 className="text-xl font-bold text-gray-900">{renderWithMentions(thread.title)}</h1>
           <span
             className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[thread.status] || ''}`}
           >

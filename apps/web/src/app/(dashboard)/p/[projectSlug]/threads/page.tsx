@@ -354,7 +354,7 @@ export default function ThreadsPage() {
                   {/* Content */}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-medium text-gray-900">{thread.title}</span>
+                      <span className="font-medium text-gray-900">{renderWithMentions(thread.title)}</span>
                       <span className="shrink-0 text-xs text-gray-400">{timeAgo(thread.createdAt)}</span>
                     </div>
                     {thread.message && (
@@ -487,7 +487,7 @@ export default function ThreadsPage() {
             ) : (
               <>
                 {/* Title + status */}
-                <h2 className="text-lg font-semibold text-gray-900">{selectedThread.title}</h2>
+                <h2 className="text-lg font-semibold text-gray-900">{renderWithMentions(selectedThread.title)}</h2>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {(isAdmin || (currentUser && selectedThread.author?.id === currentUser.id)) ? (
                     <select

@@ -7,7 +7,7 @@ import { ProjectInfo, Viewport, StatusFilter, ScopeFilter, ViewMode, DraftPin, S
 import type { StagedFile } from './components/Composer';
 import { canonicalUrl } from './lib/utils';
 import { getEnvironment } from './lib/environment';
-import { captureScreenshot, screenshotBlobToFile } from './lib/screenshot';
+// Screenshot capture removed — using iframe rendering instead
 import Toolbar from './components/Toolbar';
 import IframeViewer from './components/IframeViewer';
 import PinOverlay from './components/PinOverlay';
@@ -462,22 +462,8 @@ export default function WorkspacePage() {
         }
       }
 
-      // Auto-screenshot: capture iframe with pin marker, upload, PATCH thread
-      if (iframeRef.current) {
-        const iframe = iframeRef.current;
-        try {
-          const blob = await captureScreenshot(iframe, threadData.xPct as number, threadData.yPct as number);
-          if (blob) {
-            const file = screenshotBlobToFile(blob);
-            const { attachments: attachmentsApi } = await import('@/lib/api');
-            const uploaded = await attachmentsApi.uploadFile(file, 'thread', created.id);
-            await threadsApi.update(project!.id, created.id, { screenshotUrl: uploaded.url });
-            console.log('📸 Screenshot attached to thread');
-          }
-        } catch (err) {
-          console.error('Screenshot upload failed:', err);
-        }
-      }
+      // Note: Cross-origin screenshot capture removed — thread.pageUrl is rendered
+      // as a live iframe preview in the thread detail views instead.
     }
     
     // Refresh after uploads complete to show attachments + screenshot

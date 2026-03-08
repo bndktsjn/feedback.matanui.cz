@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Thread, Comment, User, threads as threadsApi, comments as commentsApi } from '@/lib/api';
+import { Thread, Comment, User, threads as threadsApi, comments as commentsApi, attachments as attachmentsApi } from '@/lib/api';
 import AuthorMeta from './AuthorMeta';
 import ThreadMenu from './ThreadMenu';
 import { IconClose, IconCheck, IconSend, IconPencil, IconTrash, IconImage } from './Icons';
 import Composer from './Composer';
 import type { StagedFile } from './Composer';
 import ScreenshotEditor from './ScreenshotEditor';
+import PagePreview from './PagePreview';
 import React from 'react';
 
 /** Render text with @[Name](id) mentions styled as blue inline badges */
@@ -214,7 +215,7 @@ export function ThreadPopover({
     return () => document.removeEventListener('keydown', onKey);
   }, [guardedClose]);
 
-  async function postReply(contentArg?: string) {
+  async function postReply(contentArg?: string, files?: StagedFile[]) {
     const content = (contentArg || replyContent).trim();
     if (!content || replySending) return;
     setReplySending(true);
@@ -247,7 +248,19 @@ export function ThreadPopover({
       if (isAnonymous && guestEmail) commentData.guestEmail = guestEmail.toLowerCase();
       const result = await commentsApi.create(projectId, thread.id, commentData);
       console.log('✅ Comment created:', result);
-      // Refresh in background to get real comment data
+
+      // Upload staged files as comment attachments
+      if (files && files.length > 0 && result?.id) {
+        for (const sf of files) {
+          try {
+            await attachmentsApi.uploadFile(sf.file, 'comment', result.id);
+          } catch (err) {
+            console.error('Failed to upload reply attachment:', err);
+          }
+        }
+      }
+
+      // Refresh to get real comment data + attachments
       loadThread();
       onRefresh();
     } catch {
@@ -298,27 +311,13 @@ export function ThreadPopover({
         <div className="flex shrink-0 items-center gap-1 border-b border-gray-100 px-3 py-2">
           <span className="mr-auto text-[10px] font-mono text-gray-400">#{thread.id.slice(0, 8)}</span>
           {!isAnonymous && (
-            <>
               <ThreadMenu
                 thread={thread}
-                onResolve={onResolve}
                 onDelete={onDelete}
                 onShowEnv={onShowEnv}
                 showToast={showToast}
                 anchorRef={ref}
               />
-              <button
-                onClick={() => onResolve(thread)}
-                className={`flex h-6 w-6 items-center justify-center rounded-full border transition ${
-                  thread.status === 'resolved'
-                    ? 'border-green-600 bg-green-600 text-white hover:border-amber-500 hover:bg-amber-50 hover:text-amber-600'
-                    : 'border-gray-300 text-gray-400 hover:border-green-600 hover:bg-green-50 hover:text-green-600'
-                }`}
-                title={thread.status === 'resolved' ? 'Reopen' : 'Resolve'}
-              >
-                <IconCheck />
-              </button>
-            </>
           )}
           <button onClick={guardedClose} className="text-gray-400 hover:text-gray-600 ml-1">
             <IconClose />
@@ -336,26 +335,21 @@ export function ThreadPopover({
               createdAt={thread.createdAt}
             />
             <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-800">{renderWithMentions(thread.message)}</p>
-            {/* Screenshot preview */}
-            {thread.screenshotUrl && (
-              <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 relative group">
-                <img
-                  src={thread.screenshotUrl}
-                  alt="Screenshot"
-                  className="w-full cursor-pointer hover:opacity-90 transition"
-                  onClick={() => window.open(thread.screenshotUrl!, '_blank')}
-                />
-                <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowScreenshotEditor(true); }}
-                    className="flex h-5 w-5 items-center justify-center rounded bg-white/90 text-gray-500 hover:text-blue-600 shadow-sm"
-                    title="Edit screenshot"
-                  >
-                    <IconPencil />
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Screenshot or page preview */}
+            <PagePreview
+              screenshotUrl={thread.screenshotUrl}
+              pageUrl={thread.pageUrl}
+              onScreenshotClick={() => window.open(thread.screenshotUrl!, '_blank')}
+              actions={thread.screenshotUrl ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowScreenshotEditor(true); }}
+                  className="flex h-5 w-5 items-center justify-center rounded bg-white/90 text-gray-500 hover:text-blue-600 shadow-sm"
+                  title="Edit screenshot"
+                >
+                  <IconPencil />
+                </button>
+              ) : undefined}
+            />
             {/* Attachments */}
             {thread.attachments && thread.attachments.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
@@ -433,6 +427,22 @@ export function ThreadPopover({
                     ) : (
                       <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{renderWithMentions(c.content)}</p>
                     )}
+                    {/* Comment attachments */}
+                    {c.attachments && c.attachments.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {c.attachments.map((att) => (
+                          att.mimeType?.startsWith('image/') ? (
+                            <div key={att.id} className="rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:opacity-90 transition" style={{ maxWidth: '140px' }}>
+                              <img src={att.url} alt={att.filename} className="w-full object-cover" onClick={() => window.open(att.url, '_blank')} />
+                            </div>
+                          ) : (
+                            <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 transition">
+                              📎 {att.filename}
+                            </a>
+                          )
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -453,7 +463,7 @@ export function ThreadPopover({
               <Composer
                 placeholder="Reply…"
                 projectId={projectId}
-                onSubmit={(content) => postReply(content)}
+                onSubmit={(content, files) => postReply(content, files)}
                 sending={replySending}
                 onContentChange={(has) => setReplyContent(has ? ' ' : '')}
               />

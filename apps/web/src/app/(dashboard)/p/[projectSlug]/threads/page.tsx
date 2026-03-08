@@ -393,22 +393,6 @@ export default function ThreadsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
               </button>
-              {/* Resolve toggle — only for author or admin */}
-              {(isAdmin || (currentUser && selectedThread.author?.id === currentUser.id)) && (
-                <button
-                  onClick={() => handleResolveToggle(selectedThread)}
-                  className={`flex h-7 w-7 items-center justify-center rounded-full border transition ${
-                    selectedThread.status === 'resolved'
-                      ? 'border-green-600 bg-green-600 text-white hover:border-amber-500 hover:bg-amber-50 hover:text-amber-600'
-                      : 'border-gray-300 text-gray-400 hover:border-green-600 hover:bg-green-50 hover:text-green-600'
-                  }`}
-                  title={selectedThread.status === 'resolved' ? 'Reopen' : 'Resolve'}
-                >
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                </button>
-              )}
               {/* Thread menu — only for author or admin */}
               {(isAdmin || (currentUser && selectedThread.author?.id === currentUser.id)) && (
               <div className="relative">
@@ -431,15 +415,6 @@ export default function ThreadsPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                       </svg>
                       Copy link
-                    </button>
-                    <button
-                      onClick={() => { handleResolveToggle(selectedThread); setMenuOpenId(null); }}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                      {selectedThread.status === 'resolved' ? 'Reopen' : 'Resolve'}
                     </button>
                     <button
                       onClick={() => { setConfirmDelete(selectedThread.id); setMenuOpenId(null); }}
@@ -532,16 +507,36 @@ export default function ThreadsPage() {
                   )}
                 </div>
 
-                {/* Screenshot */}
-                {selectedThread.screenshotUrl && (
+                {/* Screenshot or page preview */}
+                {selectedThread.screenshotUrl ? (
                   <div className="mt-3">
                     <img
                       src={selectedThread.screenshotUrl}
                       alt="Screenshot"
-                      className="w-full rounded-lg border border-gray-200 object-contain"
+                      className="w-full rounded-lg border border-gray-200 object-contain cursor-pointer hover:opacity-90 transition"
+                      onClick={() => window.open(selectedThread.screenshotUrl!, '_blank')}
                     />
                   </div>
-                )}
+                ) : selectedThread.pageUrl ? (
+                  <div className="mt-3 rounded-lg overflow-hidden border border-gray-200 relative bg-gray-50">
+                    <div className="relative" style={{ paddingBottom: '56.25%' }}>
+                      <iframe
+                        src={selectedThread.pageUrl}
+                        className="absolute inset-0 w-full h-full border-0"
+                        sandbox="allow-scripts allow-same-origin"
+                        loading="lazy"
+                        title="Page preview"
+                      />
+                      <a
+                        href={selectedThread.pageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="absolute inset-0 z-10"
+                        title="Open page in new tab"
+                      />
+                    </div>
+                  </div>
+                ) : null}
 
                 {/* Page URL */}
                 {selectedThread.pageUrl && (

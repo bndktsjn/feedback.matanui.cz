@@ -7,6 +7,7 @@ import AuthorMeta from './AuthorMeta';
 import MoreMenu, { MenuItem } from './MoreMenu';
 import { IconBack, IconCheck, IconSend, IconLink, IconTrash, IconInfo, IconPencil, IconImage } from './Icons';
 import Composer from './Composer';
+import PagePreview from './PagePreview';
 import { copyToClipboard } from '../lib/utils';
 import React from 'react';
 
@@ -202,17 +203,6 @@ export default function ThreadDetail({
         <div className="flex items-center gap-1">
           <span className="mr-auto font-mono text-[10px] text-gray-400">#{thread.id.slice(0, 8)}</span>
           <MoreMenu items={menuItems} />
-          <button
-            onClick={() => onResolve(thread)}
-            className={`flex h-6 w-6 items-center justify-center rounded-full border transition ${
-              thread.status === 'resolved'
-                ? 'border-green-600 bg-green-600 text-white hover:border-amber-500 hover:bg-amber-50 hover:text-amber-600'
-                : 'border-gray-300 text-gray-400 hover:border-green-600 hover:bg-green-50 hover:text-green-600'
-            }`}
-            title={thread.status === 'resolved' ? 'Reopen' : 'Resolve'}
-          >
-            <IconCheck />
-          </button>
         </div>
       </div>
 
@@ -226,17 +216,12 @@ export default function ThreadDetail({
             createdAt={thread.createdAt}
           />
           <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{renderWithMentions(thread.message)}</p>
-          {/* Screenshot preview */}
-          {thread.screenshotUrl && (
-            <div className="mt-2 rounded-lg overflow-hidden border border-gray-200">
-              <img
-                src={thread.screenshotUrl}
-                alt="Screenshot"
-                className="w-full cursor-pointer hover:opacity-90 transition"
-                onClick={() => window.open(thread.screenshotUrl!, '_blank')}
-              />
-            </div>
-          )}
+          {/* Screenshot or page preview */}
+          <PagePreview
+            screenshotUrl={thread.screenshotUrl}
+            pageUrl={thread.pageUrl}
+            onScreenshotClick={() => window.open(thread.screenshotUrl!, '_blank')}
+          />
           {/* Attachments */}
           {thread.attachments && thread.attachments.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">

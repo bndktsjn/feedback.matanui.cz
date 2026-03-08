@@ -37,14 +37,6 @@ export default function ThreadMenu({
     },
   ];
 
-  if (onResolve) {
-    menuItems.push({
-      label: thread.status === 'resolved' ? 'Reopen' : 'Resolve',
-      icon: <IconCheck />,
-      action: () => onResolve(thread),
-    });
-  }
-
   if (thread.environment && onShowEnv) {
     menuItems.push({
       label: 'Environment',

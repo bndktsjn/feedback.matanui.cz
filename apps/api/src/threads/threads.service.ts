@@ -20,7 +20,7 @@ export class ThreadsService {
         ...((!authorId && dto.guestEmail) ? { guestEmail: dto.guestEmail.toLowerCase() } : {}),
         title: dto.title,
         message: dto.message,
-        pageUrl: dto.pageUrl,
+        pageUrl: dto.pageUrl?.replace(/\/+$/, '') || dto.pageUrl,
         pageTitle: dto.pageTitle,
         status: (dto.status as Prisma.EnumThreadStatusFieldUpdateOperationsInput['set']) ?? 'open',
         priority:
@@ -77,7 +77,7 @@ export class ThreadsService {
     if (query.priority)
       where.priority = query.priority as Prisma.EnumThreadPriorityFilter['equals'];
     if (query.type) where.type = query.type as Prisma.EnumThreadTypeFilter['equals'];
-    if (query.pageUrl) where.pageUrl = query.pageUrl;
+    if (query.pageUrl) where.pageUrl = query.pageUrl.replace(/\/+$/, '');
     if (query.viewport)
       where.viewport = query.viewport as Prisma.EnumViewportTypeFilter['equals'];
 
@@ -173,7 +173,7 @@ export class ThreadsService {
     const baseWhere: Prisma.ThreadWhereInput = {
       projectId,
       deletedAt: null,
-      ...(pageUrl ? { pageUrl } : {}),
+      ...(pageUrl ? { pageUrl: pageUrl.replace(/\/+$/, '') } : {}),
       ...(viewport
         ? { viewport: viewport as Prisma.EnumViewportTypeFilter['equals'] }
         : {}),

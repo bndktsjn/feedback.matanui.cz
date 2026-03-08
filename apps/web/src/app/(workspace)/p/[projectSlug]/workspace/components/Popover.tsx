@@ -143,7 +143,6 @@ export function ThreadPopover({
     setShowScreenshotEditor(false);
     setScreenshotBlob(null);
     try {
-      const { attachments: attachmentsApi } = await import('@/lib/api');
       const file = new File([editedBlob], 'screenshot-edited.png', { type: 'image/png' });
       const uploaded = await attachmentsApi.uploadFile(file, 'thread', thread.id);
       await threadsApi.update(projectId, thread.id, { screenshotUrl: uploaded.url });

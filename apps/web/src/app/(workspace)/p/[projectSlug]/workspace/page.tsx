@@ -2,12 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import { threads as threadsApi, orgs, projects, auth, Thread, User, ProjectSettings } from '@/lib/api';
+import { threads as threadsApi, attachments as attachmentsApi, orgs, projects, auth, Thread, User, ProjectSettings } from '@/lib/api';
 import { ProjectInfo, Viewport, StatusFilter, ScopeFilter, ViewMode, DraftPin, StatusCounts } from './types';
 import type { StagedFile } from './components/Composer';
 import { canonicalUrl } from './lib/utils';
 import { getEnvironment } from './lib/environment';
-// Screenshot capture removed — using iframe rendering instead
+import { captureScreenshot, screenshotBlobToFile } from './lib/screenshot';
 import Toolbar from './components/Toolbar';
 import IframeViewer from './components/IframeViewer';
 import PinOverlay from './components/PinOverlay';
@@ -452,7 +452,6 @@ export default function WorkspacePage() {
 
       // Upload staged files as attachments (await all before refresh)
       if (files && files.length > 0) {
-        const { attachments: attachmentsApi } = await import('@/lib/api');
         for (const sf of files) {
           try {
             await attachmentsApi.uploadFile(sf.file, 'thread', created.id);
@@ -462,8 +461,20 @@ export default function WorkspacePage() {
         }
       }
 
-      // Note: Cross-origin screenshot capture removed — thread.pageUrl is rendered
-      // as a live iframe preview in the thread detail views instead.
+      // Capture screenshot via bridge (runs inside iframe — no cross-origin issue)
+      const iframe = iframeRef.current;
+      if (iframe) {
+        try {
+          const blob = await captureScreenshot(iframe, threadData.xPct as number, threadData.yPct as number);
+          if (blob) {
+            const file = screenshotBlobToFile(blob, message.slice(0, 30));
+            const uploaded = await attachmentsApi.uploadFile(file, 'thread', created.id);
+            await threadsApi.update(project.id, created.id, { screenshotUrl: uploaded.url });
+          }
+        } catch (err) {
+          console.warn('Screenshot capture failed (non-fatal):', err);
+        }
+      }
     }
     
     // Refresh after uploads complete to show attachments + screenshot

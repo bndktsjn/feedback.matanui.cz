@@ -1,7 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { json, urlencoded } from 'express';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
 import { join } from 'path';
@@ -11,13 +10,11 @@ import { PrismaService } from './prisma/prisma.service';
 import { PrismaSessionStore } from './auth/session/session-store';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    bodyParser: false,
-  });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Increase body size limit for base64 screenshot uploads from overlay widget
-  app.use(json({ limit: '10mb' }));
-  app.use(urlencoded({ extended: true, limit: '10mb' }));
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { limit: '10mb' });
 
   app.useStaticAssets(join(__dirname, '..', 'public'), { prefix: '/static/' });
 

@@ -361,21 +361,32 @@ export default function WorkspacePage() {
     }
     window.addEventListener('blur', onBlur);
     return () => { window.removeEventListener('blur', onBlur); };
-  }, []);
+  }, [draftPin]);
+
+  /* ── Update secondary point on existing thread ─────────────── */
+  const handleSecondaryDragEnd = useCallback(async (thread: Thread, sx: number, sy: number) => {
+    if (!project) return;
+    const newAnchor = JSON.stringify({
+      type: 'area',
+      secondaryX: Math.round(sx * 1e4) / 1e4,
+      secondaryY: Math.round(sy * 1e4) / 1e4,
+    });
+    try {
+      await threadsApi.update(project.id, thread.id, { anchorData: newAnchor });
+      loadThreads();
+    } catch (err) {
+      console.error('Failed to update secondary point:', err);
+    }
+  }, [project, loadThreads]);
 
   /* ── Create thread ──────────────────────────────────────────── */
-  const handleCreateThread = useCallback(async (message: string, x: number, y: number, files?: StagedFile[], mentionIds?: string[]) => {
+  const handleCreateThread = useCallback(async (message: string, pinX: number, pinY: number, files?: StagedFile[], mentionIds?: string[], secondary?: { x: number; y: number }) => {
     if (!project) return;
 
-    // Anonymous user must have email
     if (isAnonymous && allowAnonymousComments && !guestEmail.trim()) {
       showToast('Please enter your email first');
       return;
     }
-
-    // Determine context type based on draft pin area
-    const draft = draftPin;
-    const hasArea = draft?.area != null;
 
     const env = getEnvironment(viewport);
     const threadData: Record<string, unknown> = {
@@ -385,8 +396,8 @@ export default function WorkspacePage() {
       pageTitle: project.name,
       contextType: 'pin',
       viewport,
-      xPct: Math.round(x * 1e4) / 1e4,
-      yPct: Math.round(y * 1e4) / 1e4,
+      xPct: Math.round(pinX * 1e4) / 1e4,
+      yPct: Math.round(pinY * 1e4) / 1e4,
       createdVia: 'workspace',
       environment: {
         browserName: env.browserName,
@@ -401,14 +412,12 @@ export default function WorkspacePage() {
       },
     };
 
-    // Area selection data (Figma-style rectangle)
-    if (hasArea && draft?.area) {
+    // Area anchor data — secondary point (X) stored alongside thread
+    if (secondary) {
       threadData.anchorData = JSON.stringify({
         type: 'area',
-        x1: Math.round(x * 1e4) / 1e4,
-        y1: Math.round(y * 1e4) / 1e4,
-        x2: Math.round(draft.area.x2 * 1e4) / 1e4,
-        y2: Math.round(draft.area.y2 * 1e4) / 1e4,
+        secondaryX: Math.round(secondary.x * 1e4) / 1e4,
+        secondaryY: Math.round(secondary.y * 1e4) / 1e4,
       });
     }
 
@@ -719,25 +728,23 @@ export default function WorkspacePage() {
           currentPageUrl={currentPageUrl}
           viewport={viewport}
           projectId={project.id}
-          onOverlayClick={(x, y) => {
-            // Anonymous users without commenting can only view
+          onOverlayClick={(pinX, pinY) => {
             if (isAnonymous && !allowAnonymousComments) {
               showToast('Commenting is not enabled for guests');
               return;
             }
-            // 2.4: Close current thread/popover when clicking to place new pin
             if (popoverThread) { setPopoverThread(null); setPopoverPinRect(null); }
             if (activeThread) { setActiveThread(null); setViewMode('list'); }
-            setDraftPin({ x, y });
+            setDraftPin({ pinX, pinY });
           }}
-          onAreaSelect={(x1, y1, x2, y2) => {
+          onAreaSelect={(secondaryX, secondaryY, pinX, pinY) => {
             if (isAnonymous && !allowAnonymousComments) {
               showToast('Commenting is not enabled for guests');
               return;
             }
             if (popoverThread) { setPopoverThread(null); setPopoverPinRect(null); }
             if (activeThread) { setActiveThread(null); setViewMode('list'); }
-            setDraftPin({ x: x1, y: y1, area: { x2, y2 } });
+            setDraftPin({ pinX, pinY, secondary: { x: secondaryX, y: secondaryY } });
           }}
           onPinHoverEnter={handlePinHoverEnter}
           onPinHoverLeave={handlePinHoverLeave}
@@ -748,6 +755,7 @@ export default function WorkspacePage() {
           onPanelRestore={() => setPanelHidden(false)}
           onDraftSubmit={handleCreateThread}
           onDraftCancel={() => setDraftPin(null)}
+          onSecondaryDragEnd={handleSecondaryDragEnd}
         />
 
         {/* Interact mode banner */}

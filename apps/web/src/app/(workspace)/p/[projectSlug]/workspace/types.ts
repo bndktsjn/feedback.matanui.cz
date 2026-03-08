@@ -17,10 +17,11 @@ export interface ProjectInfo {
 }
 
 export interface DraftPin {
-  x: number;
-  y: number;
-  /** Area selection bounds — present when user dragged a rectangle */
-  area?: { x2: number; y2: number };
+  /** Pin position — the primary anchor (Y in spec). Thread is identified by this. */
+  pinX: number;
+  pinY: number;
+  /** Secondary control point (X in spec) — defines callout area geometry. Absent for point-only pins. */
+  secondary?: { x: number; y: number };
 }
 
 export interface StatusCounts {

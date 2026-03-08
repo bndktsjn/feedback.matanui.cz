@@ -1,75 +1,87 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import { clamp } from '../lib/utils';
 import { IconChat } from './Icons';
 import Composer from './Composer';
 import type { StagedFile } from './Composer';
 
 interface DraftPinProps {
-  x: number;
-  y: number;
+  /** Pin position — primary anchor (Y in spec) */
+  pinX: number;
+  pinY: number;
+  /** Secondary control point (X in spec) — absent for point-only pins */
+  secondary?: { x: number; y: number };
   projectId: string;
   overlayRect: DOMRect | null;
-  onSubmit: (message: string, x: number, y: number, files: StagedFile[], mentionIds: string[]) => Promise<void>;
+  /** Submit: sends pin coords (Y) + optional secondary (X) */
+  onSubmit: (message: string, pinX: number, pinY: number, files: StagedFile[], mentionIds: string[], secondary?: { x: number; y: number }) => Promise<void>;
   onCancel: () => void;
-  /** Area bounds — present when selecting a rectangle instead of a point */
-  area?: { x2: number; y2: number };
 }
 
 export { type StagedFile };
 
-export default function DraftPin({ x: initX, y: initY, projectId, overlayRect, onSubmit, onCancel, area }: DraftPinProps) {
-  const [pos, setPos] = useState({ x: initX, y: initY });
+type DragTarget = 'pin' | 'secondary';
+
+export default function DraftPin({ pinX: initPinX, pinY: initPinY, secondary: initSecondary, projectId, overlayRect, onSubmit, onCancel }: DraftPinProps) {
+  const [pin, setPin] = useState({ x: initPinX, y: initPinY });
+  const [sec, setSec] = useState<{ x: number; y: number } | null>(initSecondary ?? null);
+
   const [submitting, setSubmitting] = useState(false);
   const [shakeWarned, setShakeWarned] = useState(false);
   const [shaking, setShaking] = useState(false);
   const [hasContent, setHasContent] = useState(false);
-  const dragState = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
   const composerWrapRef = useRef<HTMLDivElement>(null);
 
-  // Keep area in sync with initial props (it doesn't change after creation)
-  const areaRef = useRef(area);
+  const dragRef = useRef<{
+    target: DragTarget;
+    startClientX: number;
+    startClientY: number;
+    startPt: { x: number; y: number };
+  } | null>(null);
 
-  function onPinIconPointerDown(e: React.PointerEvent) {
+  const hasArea = sec !== null;
+
+  /* ── Drag helpers ────────────────────────────────────────── */
+  function startDrag(e: React.PointerEvent, target: DragTarget) {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragState.current = {
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      startX: pos.x,
-      startY: pos.y,
-    };
+    const pt = target === 'pin' ? pin : sec!;
+    dragRef.current = { target, startClientX: e.clientX, startClientY: e.clientY, startPt: { ...pt } };
   }
 
-  function onPinIconPointerMove(e: React.PointerEvent) {
-    if (!dragState.current || !overlayRect) return;
-    const dx = (e.clientX - dragState.current.startClientX) / overlayRect.width * 100;
-    const dy = (e.clientY - dragState.current.startClientY) / overlayRect.height * 100;
-    setPos({
-      x: clamp(dragState.current.startX + dx, 0, 100),
-      y: clamp(dragState.current.startY + dy, 0, 100),
-    });
+  function onDragMove(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d || !overlayRect) return;
+    const dx = ((e.clientX - d.startClientX) / overlayRect.width) * 100;
+    const dy = ((e.clientY - d.startClientY) / overlayRect.height) * 100;
+    const nx = clamp(d.startPt.x + dx, 0, 100);
+    const ny = clamp(d.startPt.y + dy, 0, 100);
+    if (d.target === 'pin') setPin({ x: nx, y: ny });
+    else setSec({ x: nx, y: ny });
   }
 
-  function onPinIconPointerUp() {
-    dragState.current = null;
-  }
+  function onDragEnd() { dragRef.current = null; }
 
+  /* ── Submit ─────────────────────────────────────────────── */
   const handleSubmit = useCallback(async (content: string, files: StagedFile[], mentionIds: string[]) => {
     if (submitting) return;
     setSubmitting(true);
     try {
-      await onSubmit(content, pos.x, pos.y, files, mentionIds);
+      await onSubmit(content, pin.x, pin.y, files, mentionIds, sec ?? undefined);
+      onCancel();
     } finally {
       setSubmitting(false);
     }
-  }, [onSubmit, pos.x, pos.y, submitting]);
+  }, [onSubmit, pin, sec, submitting, onCancel]);
 
+  /* ── Outside-click guard ────────────────────────────────── */
   function handleOverlayClick(e: React.MouseEvent) {
     if (composerWrapRef.current?.contains(e.target as Node)) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-draft-handle]')) return;
     if (hasContent && !shakeWarned) {
       setShakeWarned(true);
       setShaking(true);
@@ -79,78 +91,91 @@ export default function DraftPin({ x: initX, y: initY, projectId, overlayRect, o
     onCancel();
   }
 
-  // Flip composer to left side when pin is near right edge
-  const flipLeft = pos.x >= 70;
+  /* ── Layout ─────────────────────────────────────────────── */
+  const flipLeft = pin.x >= 65;
 
-  // For area mode, render a dashed rectangle
-  const areaStyle = areaRef.current ? {
-    left: `${Math.min(pos.x, areaRef.current.x2)}%`,
-    top: `${Math.min(pos.y, areaRef.current.y2)}%`,
-    width: `${Math.abs(areaRef.current.x2 - pos.x)}%`,
-    height: `${Math.abs(areaRef.current.y2 - pos.y)}%`,
+  // Area rectangle between pin (Y) and secondary (X)
+  const areaRect = hasArea ? {
+    left: `${Math.min(pin.x, sec!.x)}%`,
+    top: `${Math.min(pin.y, sec!.y)}%`,
+    width: `${Math.abs(pin.x - sec!.x)}%`,
+    height: `${Math.abs(pin.y - sec!.y)}%`,
   } : null;
 
   return (
     <>
       {/* Invisible click-catcher for outside-click guard */}
-      <div className="absolute inset-0 z-0" onClick={handleOverlayClick} />
+      <div className="absolute inset-0 z-[55]" onClick={handleOverlayClick} />
 
-      {/* Area highlight rectangle (Figma-style, dashed border only) */}
-      {areaStyle && (
+      {/* ── Area rectangle (if secondary exists) ── */}
+      {hasArea && areaRect && (
         <div
-          className="absolute z-[5] border border-dashed border-blue-400/60 pointer-events-none rounded-sm"
-          style={areaStyle}
+          className="absolute z-[56] border border-dashed border-blue-500/70 bg-blue-500/5 pointer-events-none rounded-sm"
+          style={areaRect}
         />
       )}
 
-      {/* Pin marker — draggable */}
+      {/* ── Secondary dot (X) ── */}
+      {hasArea && (
+        <div
+          data-draft-handle="secondary"
+          className="absolute z-[62] flex h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full border-2 border-blue-500 bg-white shadow-md hover:bg-blue-50 active:bg-blue-100 active:cursor-grabbing"
+          style={{ left: `${sec!.x}%`, top: `${sec!.y}%`, pointerEvents: 'auto' }}
+          onPointerDown={(e) => startDrag(e, 'secondary')}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          title="Drag to adjust area"
+        />
+      )}
+
+      {/* ── Pin marker (Y) — always visible ── */}
       <div
-        className="absolute z-[60]"
+        data-draft-handle="pin"
+        className="absolute z-[62]"
         style={{
-          left: `${pos.x}%`,
-          top: `${pos.y}%`,
+          left: `${pin.x}%`,
+          top: `${pin.y}%`,
           transform: 'translate(-50%, -100%)',
           pointerEvents: 'auto',
         }}
       >
-        <div className="relative">
-          {/* Teardrop - this is the draggable part */}
-          <div
-            className="flex h-7 w-7 animate-pulse items-center justify-center bg-orange-500 text-white shadow-lg"
-            style={{ 
-              borderRadius: '50% 50% 50% 0', 
-              transform: 'rotate(-45deg)',
-              cursor: dragState.current ? 'grabbing' : 'grab'
-            }}
-            onPointerDown={onPinIconPointerDown}
-            onPointerMove={onPinIconPointerMove}
-            onPointerUp={onPinIconPointerUp}
-            title="Drag to reposition pin"
-          >
-            <span style={{ transform: 'rotate(45deg)', display: 'flex' }}>
-              <IconChat />
-            </span>
-          </div>
+        <div
+          className="flex h-7 w-7 animate-pulse items-center justify-center bg-orange-500 text-white shadow-lg cursor-grab active:cursor-grabbing"
+          style={{ borderRadius: '50% 50% 50% 0', transform: 'rotate(-45deg)' }}
+          onPointerDown={(e) => startDrag(e, 'pin')}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          title="Drag to reposition"
+        >
+          <span style={{ transform: 'rotate(45deg)', display: 'flex' }}>
+            <IconChat />
+          </span>
+        </div>
+      </div>
 
-          {/* Composer — positioned relative to pin */}
+      {/* ── Composer next to pin ── */}
+      <div
+        className="absolute z-[70]"
+        style={{
+          left: `${pin.x}%`,
+          top: `${pin.y}%`,
+          pointerEvents: 'auto',
+        }}
+      >
+        <div className={`${flipLeft ? '-translate-x-[calc(100%+12px)]' : 'translate-x-3'} -translate-y-1/2`}>
           <div
-            className={`absolute top-0 z-[70] ${flipLeft ? 'right-10' : 'left-10'}`}
-            style={{ transform: 'translateY(-50%)' }}
+            ref={composerWrapRef}
+            className={`w-72 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl ${shaking ? 'animate-shake' : ''}`}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              ref={composerWrapRef}
-              className={`w-72 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl ${shaking ? 'animate-shake' : ''}`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Composer
-                placeholder="Add a comment…"
-                projectId={projectId}
-                onSubmit={handleSubmit}
-                sending={submitting}
-                autoFocus
-                onContentChange={setHasContent}
-              />
-            </div>
+            <Composer
+              placeholder="Add a comment…"
+              projectId={projectId}
+              onSubmit={handleSubmit}
+              sending={submitting}
+              autoFocus
+              onContentChange={setHasContent}
+            />
           </div>
         </div>
       </div>

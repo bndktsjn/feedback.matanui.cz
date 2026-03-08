@@ -113,6 +113,11 @@ export default function Composer({
       return;
     }
     const query = before.slice(atIdx + 1);
+    // Close mention on space or end-of-word characters
+    if (/\s/.test(query) || /[.,!?;:)]/.test(query[0])) {
+      setMentionQuery(null);
+      return;
+    }
     if (query.length > 20 || /\n/.test(query)) {
       setMentionQuery(null);
       return;
@@ -127,49 +132,45 @@ export default function Composer({
       setMentionPos(null);
       return;
     }
+    // Position popup immediately so loading state is visible
+    const ta = textareaRef.current;
+    if (ta) {
+      const rect = ta.getBoundingClientRect();
+      setMentionPos({ top: rect.top - 4, left: rect.left });
+    }
+    setMentionLoading(true);
     clearTimeout(mentionTimer.current);
     mentionTimer.current = setTimeout(async () => {
-      setMentionLoading(true);
+      console.log('🔍 Mention search:', { projectId, query: mentionQuery });
       try {
         const results = await usersApi.search(projectId, mentionQuery || undefined);
+        console.log('✅ Mention results:', results);
         setMentionResults(results);
         setMentionIdx(0);
-        // Position popup below textarea
-        const ta = textareaRef.current;
-        if (ta) {
-          const rect = ta.getBoundingClientRect();
-          setMentionPos({ top: rect.bottom + 4, left: rect.left });
-        }
-      } catch {
-        setMentionResults([]);
+      } catch (err) {
+        console.error('❌ Mention API failed:', err);
+        // Fallback: show Guest option if API fails
+        setMentionResults([{ id: 'guest', displayName: 'Guest', email: '', avatarUrl: null }]);
+        setMentionIdx(0);
       } finally {
         setMentionLoading(false);
       }
-    }, 200);
+    }, 100);
     return () => clearTimeout(mentionTimer.current);
   }, [mentionQuery, projectId]);
 
-  function insertMention(user: ProjectMemberUser | { type: 'guest'; email: string }) {
+  function insertMention(user: ProjectMemberUser) {
     const ta = textareaRef.current;
     if (!ta) return;
     const cursorPos = ta.selectionStart;
     const before = content.slice(0, cursorPos);
     const atIdx = before.lastIndexOf('@');
     if (atIdx === -1) return;
-    let mentionText: string;
-    let mentionId: string;
-    if ('type' in user && user.type === 'guest') {
-      mentionText = `@[Guest](${user.email})`;
-      mentionId = user.email;
-    } else {
-      const u = user as ProjectMemberUser;
-      mentionText = `@[${u.displayName}](${u.id})`;
-      mentionId = u.id;
-    }
+    const mentionText = `@[${user.displayName}](${user.id})`;
     const newContent = content.slice(0, atIdx) + mentionText + ' ' + content.slice(cursorPos);
     setContent(newContent);
     setMentionQuery(null);
-    setMentionIds((prev) => prev.includes(mentionId) ? prev : [...prev, mentionId]);
+    setMentionIds((prev) => prev.includes(user.id) ? prev : [...prev, user.id]);
     // Set cursor after mention
     requestAnimationFrame(() => {
       const newPos = atIdx + mentionText.length + 1;
@@ -370,56 +371,38 @@ export default function Composer({
         </div>
       )}
 
-      {/* Mention autocomplete popup */}
+      {/* Mention autocomplete popup — positioned above the textarea */}
       {mentionPos && mentionQuery !== null && (
         typeof document !== 'undefined' ? createPortal(
           <div
             className="fixed z-[99999] w-56 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl"
-            style={{ top: mentionPos.top, left: mentionPos.left }}
+            style={{ top: mentionPos.top, left: mentionPos.left, transform: 'translateY(-100%)' }}
           >
             {mentionLoading && (
-              <div className="px-3 py-2 text-xs text-gray-400">Loading…</div>
+              <div className="px-3 py-2 text-xs text-gray-400">Typing…</div>
             )}
             {!mentionLoading && mentionResults.length === 0 && (
-              <div className="px-3 py-2 text-xs text-gray-400">No users found</div>
+              <div className="px-3 py-2 text-xs text-gray-400">Type a name…</div>
             )}
-            {!mentionLoading && (
-              <>
-                {/* Guest option */}
-                <button
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); insertMention({ type: 'guest', email: 'guest' }); }}
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition ${
-                    mentionIdx === 0 && mentionResults.length === 0 ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[10px] font-medium text-gray-500">
-                    G
+            {!mentionLoading && mentionResults.map((u, i) => (
+              <button
+                key={u.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); insertMention(u); }}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition ${
+                  i === mentionIdx ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {u.avatarUrl ? (
+                  <img src={u.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
+                ) : (
+                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[10px] font-medium text-gray-500">
+                    {(u.displayName || u.email)[0]?.toUpperCase()}
                   </div>
-                  <span className="truncate">Guest (anyone)</span>
-                </button>
-                {/* Project members */}
-                {mentionResults.map((u, i) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onMouseDown={(e) => { e.preventDefault(); insertMention(u); }}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition ${
-                      i === mentionIdx ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {u.avatarUrl ? (
-                      <img src={u.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
-                    ) : (
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[10px] font-medium text-gray-500">
-                        {(u.displayName || u.email)[0]?.toUpperCase()}
-                      </div>
-                    )}
-                    <span className="truncate">{u.displayName || u.email}</span>
-                  </button>
-                ))}
-              </>
-            )}
+                )}
+                <span className="truncate">{u.displayName || u.email}</span>
+              </button>
+            ))}
           </div>,
           document.body
         ) : null

@@ -169,65 +169,63 @@ export const threads = {
   },
 };
 
+// ── Generic file upload (multipart → API → MinIO) ──
+export async function uploadFile(
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<{ storageKey: string; url: string; filename: string; mimeType: string; sizeBytes: number }> {
+  const form = new FormData();
+  form.append('file', file);
+
+  const csrf = getCsrfToken();
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}/uploads`);
+    xhr.withCredentials = true;
+    if (csrf) xhr.setRequestHeader('X-CSRF-Token', csrf);
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        reject(new Error(`Upload failed (${xhr.status})`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Upload failed'));
+    xhr.send(form);
+  });
+}
+
 // Attachments
 export const attachments = {
-  presign: (data: { attachableType: string; attachableId: string; filename: string; mimeType: string }) =>
-    apiFetch<{ uploadUrl: string; publicUrl: string; storageKey: string }>('/attachments/presign', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  confirm: (data: {
-    attachableType: string;
-    attachableId: string;
-    filename: string;
-    storageKey: string;
-    url: string;
-    mimeType: string;
-    sizeBytes: number;
-  }) =>
-    apiFetch<AttachmentInfo>('/attachments/confirm', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
   list: (attachableType: string, attachableId: string) =>
     apiFetch<AttachmentInfo[]>(`/attachments?attachableType=${attachableType}&attachableId=${attachableId}`),
   delete: (id: string) =>
     apiFetch(`/attachments/${id}`, { method: 'DELETE' }),
-  /** High-level helper: presign → PUT to S3 → confirm. Returns the created attachment. */
+  /** Upload file via API proxy then create attachment record in DB */
   async uploadFile(
     file: File,
     attachableType: string,
     attachableId: string,
     onProgress?: (pct: number) => void,
   ): Promise<AttachmentInfo> {
-    const { uploadUrl, publicUrl, storageKey } = await this.presign({
-      attachableType,
-      attachableId,
-      filename: file.name,
-      mimeType: file.type,
+    const uploaded = await uploadFile(file, onProgress);
+    return apiFetch<AttachmentInfo>('/attachments/confirm', {
+      method: 'POST',
+      body: JSON.stringify({
+        attachableType,
+        attachableId,
+        filename: uploaded.filename,
+        storageKey: uploaded.storageKey,
+        url: uploaded.url,
+        mimeType: uploaded.mimeType,
+        sizeBytes: uploaded.sizeBytes,
+      }),
     });
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('PUT', uploadUrl);
-      xhr.setRequestHeader('Content-Type', file.type);
-      if (onProgress) {
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-        };
-      }
-      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('Upload failed')));
-      xhr.onerror = () => reject(new Error('Upload failed'));
-      xhr.send(file);
-    });
-    return this.confirm({
-      attachableType,
-      attachableId,
-      filename: file.name,
-      storageKey,
-      url: publicUrl,
-      mimeType: file.type,
-      sizeBytes: file.size,
-    }) as Promise<AttachmentInfo>;
   },
 };
 
@@ -380,6 +378,7 @@ export interface Thread {
   targetSelector?: string | null;
   guestEmail?: string | null;
   author: { id: string; email: string; displayName: string; avatarUrl: string | null } | null;
+  attachments?: AttachmentInfo[];
   comments?: Comment[];
   environment?: Record<string, unknown> | null;
   _count: { comments: number };

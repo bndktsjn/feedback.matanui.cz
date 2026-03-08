@@ -11,6 +11,7 @@ import { AttachmentsModule } from './attachments/attachments.module';
 import { TasksModule } from './tasks/tasks.module';
 import { MentionsModule } from './mentions/mentions.module';
 import { OverlayModule } from './overlay/overlay.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { OverlayModule } from './overlay/overlay.module';
     AttachmentsModule,
     TasksModule,
     OverlayModule,
+    UploadsModule,
   ],
 })
 export class AppModule {}

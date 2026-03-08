@@ -356,6 +356,22 @@ export function ThreadPopover({
                 </div>
               </div>
             )}
+            {/* Attachments */}
+            {thread.attachments && thread.attachments.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {thread.attachments.filter(a => !thread.screenshotUrl || a.url !== thread.screenshotUrl).map((att) => (
+                  att.mimeType.startsWith('image/') ? (
+                    <div key={att.id} className="rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:opacity-90 transition" style={{ maxWidth: '160px' }}>
+                      <img src={att.url} alt={att.filename} className="w-full object-cover" onClick={() => window.open(att.url, '_blank')} />
+                    </div>
+                  ) : (
+                    <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 transition">
+                      📎 {att.filename}
+                    </a>
+                  )
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Replies */}

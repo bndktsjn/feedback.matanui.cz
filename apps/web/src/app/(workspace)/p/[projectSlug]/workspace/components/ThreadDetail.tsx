@@ -7,6 +7,31 @@ import MoreMenu, { MenuItem } from './MoreMenu';
 import { IconBack, IconCheck, IconSend, IconLink, IconTrash, IconInfo, IconPencil, IconImage } from './Icons';
 import Composer from './Composer';
 import { copyToClipboard } from '../lib/utils';
+import React from 'react';
+
+/** Render text with @[Name](id) mentions styled as blue inline badges */
+function renderWithMentions(text: string): React.ReactNode {
+  const mentionRegex = /@\[([^\]]+)\]\([^)]+\)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = mentionRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <span key={key++} className="inline-flex items-center rounded bg-blue-100 px-1 py-0.5 text-xs font-medium text-blue-700">
+        @{match[1]}
+      </span>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  return parts.length > 0 ? parts : text;
+}
 
 interface ThreadDetailProps {
   thread: Thread;
@@ -183,7 +208,7 @@ export default function ThreadDetail({
             avatarUrl={thread.author?.avatarUrl}
             createdAt={thread.createdAt}
           />
-          <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{thread.message}</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm text-gray-800">{renderWithMentions(thread.message)}</p>
           {/* Screenshot preview */}
           {thread.screenshotUrl && (
             <div className="mt-2 rounded-lg overflow-hidden border border-gray-200">
@@ -193,6 +218,22 @@ export default function ThreadDetail({
                 className="w-full cursor-pointer hover:opacity-90 transition"
                 onClick={() => window.open(thread.screenshotUrl!, '_blank')}
               />
+            </div>
+          )}
+          {/* Attachments */}
+          {thread.attachments && thread.attachments.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {thread.attachments.filter(a => !thread.screenshotUrl || a.url !== thread.screenshotUrl).map((att) => (
+                att.mimeType.startsWith('image/') ? (
+                  <div key={att.id} className="rounded-lg overflow-hidden border border-gray-200 cursor-pointer hover:opacity-90 transition" style={{ maxWidth: '200px' }}>
+                    <img src={att.url} alt={att.filename} className="w-full object-cover" onClick={() => window.open(att.url, '_blank')} />
+                  </div>
+                ) : (
+                  <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 transition">
+                    📎 {att.filename}
+                  </a>
+                )
+              ))}
             </div>
           )}
         </div>
@@ -248,7 +289,7 @@ export default function ThreadDetail({
                     </div>
                   </div>
                 ) : (
-                  <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-700">{c.content}</p>
+                  <p className="mt-1.5 whitespace-pre-wrap text-sm text-gray-700">{renderWithMentions(c.content)}</p>
                 )}
               </div>
             ))}

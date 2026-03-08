@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
   CreateBucketCommand,
   HeadBucketCommand,
+  GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PutObjectCommand as PutCmd } from '@aws-sdk/client-s3';
@@ -44,6 +45,12 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /** Build a public URL that routes through the API (not direct to S3) */
+  getPublicUrl(storageKey: string): string {
+    const appUrl = process.env.APP_URL || '';
+    return `${appUrl}/api/v1/uploads/file/${storageKey}`;
+  }
+
   async upload(
     file: Buffer,
     originalName: string,
@@ -62,8 +69,21 @@ export class StorageService implements OnModuleInit {
       }),
     );
 
-    const url = `${this.endpoint}/${this.bucket}/${storageKey}`;
+    const url = this.getPublicUrl(storageKey);
     return { storageKey, url };
+  }
+
+  async getObject(storageKey: string): Promise<{ body: NodeJS.ReadableStream; contentType: string }> {
+    const result = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: storageKey,
+      }),
+    );
+    return {
+      body: result.Body as NodeJS.ReadableStream,
+      contentType: result.ContentType || 'application/octet-stream',
+    };
   }
 
   async getPresignedUploadUrl(

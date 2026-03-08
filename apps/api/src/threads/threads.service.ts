@@ -131,10 +131,18 @@ export class ThreadsService {
       },
     });
     if (!thread) throw new NotFoundException('Thread not found');
+
+    // Fetch polymorphic attachments for this thread
+    const attachments = await this.prisma.attachment.findMany({
+      where: { attachableType: 'thread', attachableId: threadId },
+      orderBy: { createdAt: 'asc' },
+    });
+
     return {
       ...thread,
       xPct: thread.xPct != null ? Number(thread.xPct) : null,
       yPct: thread.yPct != null ? Number(thread.yPct) : null,
+      attachments,
     };
   }
 

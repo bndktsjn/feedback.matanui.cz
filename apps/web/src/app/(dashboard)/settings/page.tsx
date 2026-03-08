@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, User, ApiError } from '@/lib/api';
+import { auth, uploadFile, User, ApiError } from '@/lib/api';
 
 type ToastType = { message: string; type: 'success' | 'error' };
 
@@ -95,21 +95,11 @@ export default function SettingsPage() {
 
     setUploadingAvatar(true);
     try {
-      // Get presigned upload URL
-      const { uploadUrl, publicUrl } = await auth.avatarUploadUrl({
-        filename: file.name,
-        mimeType: file.type,
-      });
-
-      // Upload directly to S3/MinIO
-      await fetch(uploadUrl, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type },
-      });
+      // Upload file through API proxy (avoids internal MinIO URL issue)
+      const uploaded = await uploadFile(file);
 
       // Update user profile with new avatar URL
-      const updated = await auth.updateMe({ avatarUrl: publicUrl });
+      const updated = await auth.updateMe({ avatarUrl: uploaded.url });
       setUser(updated);
       showToast('Avatar updated', 'success');
     } catch (err) {

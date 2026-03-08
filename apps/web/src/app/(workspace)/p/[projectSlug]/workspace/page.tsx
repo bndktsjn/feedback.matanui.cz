@@ -92,8 +92,10 @@ export default function WorkspacePage() {
 
   // Helper: update page URL with state reset on change
   const updatePageUrl = useCallback((canonical: string) => {
+    console.log('updatePageUrl called', { canonical, prev: currentPageUrl });
     setCurrentPageUrl((prev) => {
       if (prev !== canonical) {
+        console.log('Page URL changed', { from: prev, to: canonical });
         // Page changed — reset state (WPF NAVIGATED pattern)
         setDraftPin(null);
         setPopoverThread(null);
@@ -103,7 +105,7 @@ export default function WorkspacePage() {
       }
       return prev !== canonical ? canonical : prev;
     });
-  }, []);
+  }, [currentPageUrl]);
 
   // Track iframe navigation + keyboard via bridge (cross-origin) + direct DOM (same-origin fallback)
   const pinModeRef = useRef(pinMode);

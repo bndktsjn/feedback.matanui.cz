@@ -106,6 +106,7 @@ export default function PinOverlay({
           break;
         case 'FB_NAVIGATED':
           bridgeActive.current = true;
+          console.log('PinOverlay: FB_NAVIGATED received', { pageUrl: d.pageUrl, pageTitle: d.pageTitle });
           // Notify parent workspace page about navigation
           if (d.pageUrl && onNavigate) {
             onNavigate(d.pageUrl, d.pageTitle);

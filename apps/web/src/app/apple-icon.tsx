@@ -5,7 +5,7 @@ export const contentType = 'image/png';
 
 export default function AppleIcon() {
   const isProduction = process.env.NODE_ENV === 'production';
-  const bg = isProduction ? '#16a34a' : '#ea580c';
+  const bg = isProduction ? '#16a34a' : '#ea580c'; // orange for local/undefined, green for production
 
   return new ImageResponse(
     (

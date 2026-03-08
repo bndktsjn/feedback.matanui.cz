@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     display: 'standalone',
     background_color: '#f9fafb',
-    theme_color: process.env.NODE_ENV === 'production' ? '#16a34a' : '#ea580c',
+    theme_color: process.env.NODE_ENV === 'production' ? '#16a34a' : '#ea580c', // orange for local/undefined, green for production
     icons: [
       { src: '/icon', sizes: '32x32', type: 'image/png' },
       { src: '/apple-icon', sizes: '180x180', type: 'image/png' },

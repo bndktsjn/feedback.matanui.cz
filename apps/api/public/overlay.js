@@ -388,7 +388,12 @@
     } catch (e) { /* ignore */ }
 
     function post(data) {
-      try { window.parent.postMessage(data, '*'); } catch (e) { /* ignore */ }
+      try { 
+        console.log('[Bridge] Sending message to parent:', data);
+        window.parent.postMessage(data, '*'); 
+      } catch (e) { 
+        console.error('[Bridge] Failed to send message:', e);
+      }
     }
 
     // -- READY: report initial state --
@@ -433,10 +438,13 @@
     var lastBridgeUrl = location.href;
     function checkNav() {
       if (location.href !== lastBridgeUrl) {
+        console.log('[Bridge] Navigation detected:', { from: lastBridgeUrl, to: location.href });
         lastBridgeUrl = location.href;
+        const pageUrl = location.href.split('#')[0].replace(/\/+$/, '');
+        console.log('[Bridge] Sending FB_NAVIGATED with pageUrl:', pageUrl);
         post({
           type: FB + 'NAVIGATED',
-          pageUrl: location.href.split('#')[0].replace(/\/+$/, ''),
+          pageUrl: pageUrl,
           pageTitle: document.title
         });
         // After navigation, page dimensions likely changed
@@ -561,8 +569,10 @@
   }
 
   // ---- Boot ----
+  console.log('[Bridge] Booting, IN_IFRAME:', IN_IFRAME, 'location:', location.href);
   if (IN_IFRAME) {
     // Bridge mode — communicate with admin panel, suppress widget UI
+    console.log('[Bridge] Starting bridge mode');
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', initBridge);
     } else {

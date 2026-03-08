@@ -157,10 +157,10 @@ export class ThreadsService {
       ...thread,
       xPct: thread.xPct != null ? Number(thread.xPct) : null,
       yPct: thread.yPct != null ? Number(thread.yPct) : null,
-      attachments,
+      attachments: attachments.map((a) => ({ ...a, sizeBytes: Number(a.sizeBytes) })),
       comments: thread.comments.map((c) => ({
         ...c,
-        attachments: commentAttMap.get(c.id) || [],
+        attachments: (commentAttMap.get(c.id) || []).map((a) => ({ ...a, sizeBytes: Number(a.sizeBytes) })),
       })),
     };
   }

@@ -32,7 +32,7 @@ export class AttachmentsService {
     sizeBytes: number,
     userId: string,
   ): Promise<Record<string, unknown>> {
-    return this.prisma.attachment.create({
+    const record = await this.prisma.attachment.create({
       data: {
         attachableType,
         attachableId,
@@ -44,10 +44,11 @@ export class AttachmentsService {
         uploadedBy: userId,
       },
     });
+    return { ...record, sizeBytes: Number(record.sizeBytes) };
   }
 
   async findAll(attachableType: string, attachableId: string): Promise<Record<string, unknown>[]> {
-    return this.prisma.attachment.findMany({
+    const records = await this.prisma.attachment.findMany({
       where: { attachableType, attachableId },
       include: {
         uploader: {
@@ -56,6 +57,7 @@ export class AttachmentsService {
       },
       orderBy: { createdAt: 'asc' },
     });
+    return records.map((r) => ({ ...r, sizeBytes: Number(r.sizeBytes) }));
   }
 
   async remove(attachmentId: string, _userId: string): Promise<void> {

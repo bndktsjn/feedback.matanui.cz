@@ -57,16 +57,34 @@ export class AttachmentsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ConfirmUploadDto,
   ): Promise<Record<string, unknown>> {
-    return this.attachmentsService.confirmUpload(
-      dto.attachableType,
-      dto.attachableId,
-      dto.filename,
-      dto.storageKey,
-      dto.url,
-      dto.mimeType,
-      dto.sizeBytes,
-      user.id,
-    );
+    console.log('[AttachmentsController] confirmUpload called', {
+      attachableType: dto.attachableType,
+      attachableId: dto.attachableId,
+      filename: dto.filename,
+      storageKey: dto.storageKey,
+      url: dto.url,
+      mimeType: dto.mimeType,
+      sizeBytes: dto.sizeBytes,
+      sizeBytesType: typeof dto.sizeBytes,
+      userId: user.id,
+    });
+    try {
+      const result = await this.attachmentsService.confirmUpload(
+        dto.attachableType,
+        dto.attachableId,
+        dto.filename,
+        dto.storageKey,
+        dto.url,
+        dto.mimeType,
+        dto.sizeBytes,
+        user.id,
+      );
+      console.log('[AttachmentsController] confirmUpload success', result);
+      return result;
+    } catch (err) {
+      console.error('[AttachmentsController] confirmUpload FAILED', err);
+      throw err;
+    }
   }
 
   @Get()

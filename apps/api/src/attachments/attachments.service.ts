@@ -32,35 +32,18 @@ export class AttachmentsService {
     sizeBytes: number,
     userId: string,
   ): Promise<Record<string, unknown>> {
-    console.log('confirmUpload called', {
-      attachableType,
-      attachableId,
-      filename,
-      storageKey,
-      url,
-      mimeType,
-      sizeBytes,
-      userId,
+    return this.prisma.attachment.create({
+      data: {
+        attachableType,
+        attachableId,
+        filename,
+        storageKey,
+        url,
+        mimeType,
+        sizeBytes,
+        uploadedBy: userId,
+      },
     });
-    try {
-      const result = await this.prisma.attachment.create({
-        data: {
-          attachableType,
-          attachableId,
-          filename,
-          storageKey,
-          url,
-          mimeType,
-          sizeBytes,
-          uploadedBy: userId,
-        },
-      });
-      console.log('Attachment created successfully', result);
-      return result;
-    } catch (error) {
-      console.error('Failed to create attachment:', error);
-      throw error;
-    }
   }
 
   async findAll(attachableType: string, attachableId: string): Promise<Record<string, unknown>[]> {

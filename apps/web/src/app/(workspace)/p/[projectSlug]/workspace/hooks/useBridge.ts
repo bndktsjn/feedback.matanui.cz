@@ -303,7 +303,11 @@ export function useBridge(
   }, [iframeRef]);
 
   const scrollIframeBy = useCallback((deltaY: number) => {
-    const maxScroll = Math.max(0, docHeightRef.current - vpHeightRef.current);
+    // Use generous defaults when bridge hasn't reported dimensions yet
+    // (prevents clamping to 0 when docHeight is unknown)
+    const dh = docHeightRef.current > 0 ? docHeightRef.current : 100000;
+    const vh = vpHeightRef.current > 0 ? vpHeightRef.current : 800;
+    const maxScroll = Math.max(0, dh - vh);
     scrollYRef.current = Math.max(0, Math.min(scrollYRef.current + deltaY, maxScroll));
     applyScrollTransform(scrollYRef.current);
 
@@ -314,7 +318,8 @@ export function useBridge(
         }, '*');
       } catch { /* ignore */ }
     } else {
-      try { iframeRef.current?.contentWindow?.scrollBy(0, deltaY); } catch { /* cross-origin */ }
+      // Same-origin fallback: scroll iframe directly (throws for cross-origin, caught silently)
+      try { iframeRef.current?.contentWindow?.scrollTo(0, scrollYRef.current); } catch { /* cross-origin */ }
     }
   }, [iframeRef]);
 

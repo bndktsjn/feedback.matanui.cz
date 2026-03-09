@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { threads as threadsApi, attachments as attachmentsApi, orgs, projects, auth, Thread, User, ProjectSettings } from '@/lib/api';
 import { ProjectInfo, Viewport, StatusFilter, ScopeFilter, ViewMode, DraftPin, StatusCounts } from './types';
 import type { StagedFile } from './components/Composer';
-import { canonicalUrl } from './lib/utils';
+import { useBridge } from './hooks/useBridge';
 import { getEnvironment } from './lib/environment';
 import { captureScreenshot, screenshotBlobToFile } from './lib/screenshot';
 import Toolbar from './components/Toolbar';
@@ -83,112 +83,26 @@ export default function WorkspacePage() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  /* ── Derived ────────────────────────────────────────────────── */
-  const [currentPageUrl, setCurrentPageUrl] = useState('');
+  /* ── Bridge — single source of truth for iframe ↔ parent comm ── */
+  const bridge = useBridge(iframeRef, project?.baseUrl, () => setPinMode((v) => !v));
+  const currentPageUrl = bridge.currentPageUrl;
+  // Ref always holds the latest URL — used by handleCreateThread to avoid stale closures
+  const currentPageUrlRef = useRef(currentPageUrl);
+  currentPageUrlRef.current = currentPageUrl;
 
-  // Set initial page URL when project loads
+  // Reset pin/popover state on page navigation
+  const prevPageUrl = useRef('');
   useEffect(() => {
-    if (project) setCurrentPageUrl(canonicalUrl(project.baseUrl));
-  }, [project]);
-
-  // Helper: update page URL with state reset on change
-  // Stable callback — no deps needed; all state updates use functional form.
-  const updatePageUrl = useCallback((canonical: string) => {
-    setCurrentPageUrl((prev) => {
-      if (prev !== canonical) {
-        console.log('Page URL changed', { from: prev, to: canonical });
-        // Page changed — reset state (WPF NAVIGATED pattern)
-        setDraftPin(null);
-        setPopoverThread(null);
-        setPopoverPinRect(null);
-        setHoveredThread(null);
-        setHoveredPinRect(null);
-      }
-      return prev !== canonical ? canonical : prev;
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Track iframe navigation + keyboard via bridge (cross-origin) + direct DOM (same-origin fallback)
-  const pinModeRef = useRef(pinMode);
-  pinModeRef.current = pinMode;
-
-  // Bridge communication & iframe tracking
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    let urlPollTimer: ReturnType<typeof setInterval>;
-    let iframeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-
-    // -- Bridge message handler (primary — works cross-origin) --
-    function onBridgeMessage(e: MessageEvent) {
-      const d = e.data;
-      if (!d || typeof d.type !== 'string' || !d.type.startsWith('FB_')) return;
-
-      if (d.type === 'FB_READY' || d.type === 'FB_NAVIGATED') {
-        if (d.pageUrl) updatePageUrl(canonicalUrl(d.pageUrl));
-      }
-
-      if (d.type === 'FB_KEY_DOWN') {
-        window.focus();
-        if (d.key === 'i' || d.key === 'I') {
-          setPinMode((prev) => !prev);
-        }
-        if (d.key === 'Escape') {
-          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        }
-      }
+    if (prevPageUrl.current && prevPageUrl.current !== currentPageUrl && currentPageUrl) {
+      console.log('[Workspace] Page changed', { from: prevPageUrl.current, to: currentPageUrl });
+      setDraftPin(null);
+      setPopoverThread(null);
+      setPopoverPinRect(null);
+      setHoveredThread(null);
+      setHoveredPinRect(null);
     }
-    window.addEventListener('message', onBridgeMessage);
-
-    // -- Direct DOM polling fallback (same-origin without bridge) --
-    function syncUrl() {
-      try {
-        const href = iframe!.contentWindow?.location.href;
-        if (href && href !== 'about:blank') {
-          updatePageUrl(canonicalUrl(href));
-        }
-      } catch { /* cross-origin — bridge handles this */ }
-    }
-
-    function attachIframeKeyListener() {
-      try {
-        const win = iframe!.contentWindow;
-        if (!win) return;
-        if (iframeKeyHandler) {
-          try { win.removeEventListener('keydown', iframeKeyHandler); } catch {}
-        }
-        iframeKeyHandler = (e: KeyboardEvent) => {
-          const tgt = e.target as HTMLElement;
-          const isEditable = tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable;
-          if ((e.key === 'i' || e.key === 'I') && !isEditable) {
-            e.preventDefault();
-            window.focus();
-            setPinMode((prev) => !prev);
-          }
-          if (e.key === 'Escape') {
-            window.focus();
-            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-          }
-        };
-        win.addEventListener('keydown', iframeKeyHandler, true);
-      } catch { /* cross-origin — bridge KB_KEY_DOWN handles this */ }
-    }
-
-    function onIframeLoad() {
-      syncUrl();
-      attachIframeKeyListener();
-      setTimeout(() => window.focus(), 100);
-    }
-
-    iframe.addEventListener('load', onIframeLoad);
-    urlPollTimer = setInterval(syncUrl, 500);
-
-    return () => {
-      iframe.removeEventListener('load', onIframeLoad);
-      clearInterval(urlPollTimer);
-      window.removeEventListener('message', onBridgeMessage);
-    };
-  }, [project, updatePageUrl]);
+    prevPageUrl.current = currentPageUrl;
+  }, [currentPageUrl]);
 
   /* ── Toast helper ───────────────────────────────────────────── */
   const showToast = useCallback((msg: string) => {
@@ -393,11 +307,18 @@ export default function WorkspacePage() {
       return;
     }
 
+    // Use ref to get the absolute latest page URL (avoids stale closure)
+    const pageUrl = currentPageUrlRef.current;
+    if (!pageUrl) {
+      showToast('Waiting for page to load…');
+      return;
+    }
+
     const env = getEnvironment(viewport);
     const threadData: Record<string, unknown> = {
       title: message.slice(0, 60),
       message,
-      pageUrl: currentPageUrl,
+      pageUrl,
       pageTitle: project.name,
       contextType: 'pin',
       viewport,
@@ -723,7 +644,10 @@ export default function WorkspacePage() {
           draftPin={draftPin}
           pinMode={pinMode}
           panelHidden={panelHidden}
-          iframeRef={iframeRef}
+          setOverlayElement={bridge.setOverlayElement}
+          docHeight={bridge.docHeight}
+          scrollIframeBy={bridge.scrollIframeBy}
+          bridgeActiveRef={bridge.bridgeActiveRef}
           currentPageUrl={currentPageUrl}
           viewport={viewport}
           projectId={project.id}
@@ -755,10 +679,6 @@ export default function WorkspacePage() {
           onDraftSubmit={handleCreateThread}
           onDraftCancel={() => setDraftPin(null)}
           onSecondaryDragEnd={handleSecondaryDragEnd}
-          onNavigate={(pageUrl) => {
-            // Update the current page URL and reload pins for the new page
-            updatePageUrl(canonicalUrl(pageUrl));
-          }}
         />
 
         {/* Interact mode banner */}

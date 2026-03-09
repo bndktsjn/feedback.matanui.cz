@@ -19,6 +19,7 @@ RUN pnpm --filter @feedback/db exec prisma generate
 
 # Build
 FROM prisma AS build
+ARG CACHEBUST=1
 COPY packages/shared ./packages/shared
 COPY packages/db/src ./packages/db/src
 COPY packages/db/tsconfig.json ./packages/db/

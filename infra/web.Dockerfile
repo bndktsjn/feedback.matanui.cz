@@ -12,6 +12,7 @@ RUN pnpm install --no-frozen-lockfile
 
 # Build
 FROM deps AS build
+ARG CACHEBUST=1
 COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
 ENV NEXT_TELEMETRY_DISABLED=1

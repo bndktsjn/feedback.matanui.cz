@@ -375,32 +375,41 @@
       });
   }
 
-  // ---- Bridge Mode (iframe ↔ admin panel communication) ----
-  // Mirrors WPF plugin's initIframeBridge: reports scroll, resize, navigation,
-  // keyboard events to parent; accepts SCROLL_TO commands.
+  // ---- Bridge Mode (iframe ↔ parent communication) ----
+  // Industry pattern (BugHerd/Marker.io/MarkUp.io): agent script in iframe
+  // communicates with parent workspace via postMessage. No direct DOM access
+  // across origins — postMessage is the ONLY reliable channel.
+  //
+  // Protocol v2:
+  //   Bridge → Parent: FB_READY, FB_NAVIGATED, FB_SCROLL, FB_RESIZE,
+  //                     FB_KEY_DOWN, FB_FOCUS, FB_PONG, FB_SCREENSHOT_RESULT
+  //   Parent → Bridge: FB_INIT, FB_PING, FB_SCROLL_TO, FB_CAPTURE_SCREENSHOT
   function initBridge() {
     var FB = 'FB_';
+    var bridgeId = Math.random().toString(36).slice(2, 8);
 
-    // Best-effort: remove meta-based X-Frame-Options (HTTP header version can't be removed by JS)
+    // Best-effort: remove meta X-Frame-Options (HTTP header can't be removed by JS)
     try {
       var xfo = document.querySelector('meta[http-equiv="X-Frame-Options"]');
       if (xfo) xfo.remove();
     } catch (e) { /* ignore */ }
 
-    function post(data) {
-      try { 
-        console.log('[Bridge] Sending message to parent:', data);
-        window.parent.postMessage(data, '*'); 
-      } catch (e) { 
-        console.error('[Bridge] Failed to send message:', e);
-      }
+    // Canonical URL: strip hash + trailing slashes (consistent with parent)
+    function canonical(url) {
+      try { return url.split('#')[0].replace(/\/+$/, ''); } catch (e) { return url; }
     }
 
-    // -- READY: report initial state --
+    function post(data) {
+      try { window.parent.postMessage(data, '*'); }
+      catch (e) { console.error('[Bridge:' + bridgeId + '] postMessage failed:', e); }
+    }
+
+    // ── READY: report full state ──
     function sendReady() {
-      post({
+      var payload = {
         type: FB + 'READY',
-        pageUrl: location.href.split('#')[0].replace(/\/+$/, ''),
+        bridgeId: bridgeId,
+        pageUrl: canonical(location.href),
         pageTitle: document.title,
         docWidth: document.documentElement.scrollWidth,
         docHeight: document.documentElement.scrollHeight,
@@ -408,15 +417,17 @@
         vpHeight: window.innerHeight,
         scrollX: window.scrollX,
         scrollY: window.scrollY
-      });
+      };
+      console.log('[Bridge:' + bridgeId + '] FB_READY →', payload.pageUrl);
+      post(payload);
     }
 
-    // -- SCROLL: report every scroll event --
+    // ── SCROLL: every scroll event (passive) ──
     window.addEventListener('scroll', function () {
       post({ type: FB + 'SCROLL', scrollX: window.scrollX, scrollY: window.scrollY });
     }, { passive: true });
 
-    // -- RESIZE: report viewport/document dimension changes --
+    // ── RESIZE: viewport/document dimension changes ──
     function sendResize() {
       post({
         type: FB + 'RESIZE',
@@ -427,30 +438,25 @@
       });
     }
     window.addEventListener('resize', sendResize);
-    // Poll for document height changes (dynamic content, lazy images, etc.)
+    // Poll for document height changes (dynamic content, lazy images)
     var lastBridgeDocH = 0;
     setInterval(function () {
       var h = document.documentElement.scrollHeight;
       if (h !== lastBridgeDocH) { lastBridgeDocH = h; sendResize(); }
     }, 500);
 
-    // -- NAVIGATED: detect SPA navigation --
-    var lastBridgeUrl = location.href;
+    // ── NAVIGATED: detect SPA + MPA navigation ──
+    var lastBridgeUrl = canonical(location.href);
     function checkNav() {
-      if (location.href !== lastBridgeUrl) {
-        console.log('[Bridge] Navigation detected:', { from: lastBridgeUrl, to: location.href });
-        lastBridgeUrl = location.href;
-        const pageUrl = location.href.split('#')[0].replace(/\/+$/, '');
-        console.log('[Bridge] Sending FB_NAVIGATED with pageUrl:', pageUrl);
-        post({
-          type: FB + 'NAVIGATED',
-          pageUrl: pageUrl,
-          pageTitle: document.title
-        });
-        // After navigation, page dimensions likely changed
-        setTimeout(sendReady, 200);
+      var current = canonical(location.href);
+      if (current !== lastBridgeUrl) {
+        console.log('[Bridge:' + bridgeId + '] Navigation: ' + lastBridgeUrl + ' → ' + current);
+        lastBridgeUrl = current;
+        post({ type: FB + 'NAVIGATED', pageUrl: current, pageTitle: document.title });
+        setTimeout(sendReady, 200); // dimensions likely changed
       }
     }
+    // Intercept history API (SPA navigation)
     ['pushState', 'replaceState'].forEach(function (method) {
       var orig = history[method];
       history[method] = function () {
@@ -461,10 +467,11 @@
     });
     window.addEventListener('popstate', checkNav);
     window.addEventListener('hashchange', checkNav);
+    // Poll for URL changes (catches edge cases)
     setInterval(checkNav, 500);
 
-    // -- Screenshot capture (runs in-page, so no cross-origin issues) --
-    var h2cLoaded = null; // cached promise
+    // ── Screenshot capture (runs in-page — no cross-origin issues) ──
+    var h2cLoaded = null;
     function loadHtml2Canvas() {
       if (h2cLoaded) return h2cLoaded;
       if (window.html2canvas) { h2cLoaded = Promise.resolve(window.html2canvas); return h2cLoaded; }
@@ -482,19 +489,13 @@
       var reqId = data.reqId || '';
       loadHtml2Canvas().then(function (html2canvas) {
         return html2canvas(document.body, {
-          useCORS: true,
-          allowTaint: false,
-          logging: false,
+          useCORS: true, allowTaint: false, logging: false,
           scale: window.devicePixelRatio || 1,
-          width: window.innerWidth,
-          height: window.innerHeight,
-          scrollX: -window.scrollX,
-          scrollY: -window.scrollY,
-          windowWidth: window.innerWidth,
-          windowHeight: window.innerHeight
+          width: window.innerWidth, height: window.innerHeight,
+          scrollX: -window.scrollX, scrollY: -window.scrollY,
+          windowWidth: window.innerWidth, windowHeight: window.innerHeight
         });
       }).then(function (canvas) {
-        // Draw pin marker if coordinates provided
         if (data.pinXPct != null && data.pinYPct != null) {
           var ctx = canvas.getContext('2d');
           if (ctx) {
@@ -503,52 +504,46 @@
             var docH = document.documentElement.scrollHeight;
             var absX = (data.pinXPct / 100) * docW - window.scrollX;
             var absY = (data.pinYPct / 100) * docH - window.scrollY;
-            var cx = absX * dpr;
-            var cy = absY * dpr;
+            var cx = absX * dpr, cy = absY * dpr;
             if (cx >= 0 && cx <= canvas.width && cy >= 0 && cy <= canvas.height) {
               var r = 12 * dpr;
-              ctx.save();
-              ctx.translate(cx, cy);
-              ctx.beginPath();
-              ctx.arc(0, -r, r, Math.PI * 0.75, Math.PI * 2.25);
-              ctx.lineTo(0, r * 0.4);
-              ctx.closePath();
-              ctx.fillStyle = '#f97316';
-              ctx.fill();
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 2 * dpr;
-              ctx.stroke();
-              ctx.beginPath();
-              ctx.arc(0, -r, r * 0.35, 0, Math.PI * 2);
-              ctx.fillStyle = '#ffffff';
-              ctx.fill();
+              ctx.save(); ctx.translate(cx, cy);
+              ctx.beginPath(); ctx.arc(0, -r, r, Math.PI * 0.75, Math.PI * 2.25);
+              ctx.lineTo(0, r * 0.4); ctx.closePath();
+              ctx.fillStyle = '#f97316'; ctx.fill();
+              ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2 * dpr; ctx.stroke();
+              ctx.beginPath(); ctx.arc(0, -r, r * 0.35, 0, Math.PI * 2);
+              ctx.fillStyle = '#ffffff'; ctx.fill();
               ctx.restore();
             }
           }
         }
-        var dataUrl = canvas.toDataURL('image/png', 0.92);
-        post({ type: FB + 'SCREENSHOT_RESULT', reqId: reqId, dataUrl: dataUrl });
+        post({ type: FB + 'SCREENSHOT_RESULT', reqId: reqId, dataUrl: canvas.toDataURL('image/png', 0.92) });
       }).catch(function (err) {
         post({ type: FB + 'SCREENSHOT_RESULT', reqId: reqId, error: err.message });
       });
     }
 
-    // -- Accept commands from parent --
+    // ── Accept commands from parent ──
     window.addEventListener('message', function (e) {
       if (!e.data || typeof e.data.type !== 'string') return;
-      if (e.data.type === FB + 'SCROLL_TO') {
-        window.scrollTo({ left: e.data.x || 0, top: e.data.y || 0 });
-      }
-      if (e.data.type === FB + 'INIT') {
-        // Parent requested handshake — re-send READY
-        sendReady();
-      }
-      if (e.data.type === FB + 'CAPTURE_SCREENSHOT') {
-        captureAndSend(e.data);
+      switch (e.data.type) {
+        case FB + 'SCROLL_TO':
+          window.scrollTo({ left: e.data.x || 0, top: e.data.y || 0 });
+          break;
+        case FB + 'INIT':
+          sendReady();
+          break;
+        case FB + 'PING':
+          post({ type: FB + 'PONG', bridgeId: bridgeId, pageUrl: canonical(location.href) });
+          break;
+        case FB + 'CAPTURE_SCREENSHOT':
+          captureAndSend(e.data);
+          break;
       }
     });
 
-    // -- Forward keyboard shortcuts to parent --
+    // ── Forward keyboard shortcuts to parent ──
     document.addEventListener('keydown', function (e) {
       var tgt = e.target;
       var isEditable = tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable;
@@ -561,11 +556,25 @@
       }
     }, true);
 
-    // Send READY once page is loaded
+    // ── Notify parent when iframe gets focus ──
+    window.addEventListener('focus', function () {
+      post({ type: FB + 'FOCUS' });
+    });
+
+    // ── Send READY aggressively on boot ──
     if (document.readyState === 'complete') sendReady();
-    else window.addEventListener('load', sendReady);
-    // Retry for SPAs that render asynchronously
+    else if (document.readyState === 'interactive') {
+      sendReady();
+      window.addEventListener('load', sendReady);
+    } else {
+      document.addEventListener('DOMContentLoaded', sendReady);
+      window.addEventListener('load', sendReady);
+    }
+    // Retries with increasing delays (parent listener may not be ready)
+    setTimeout(sendReady, 200);
+    setTimeout(sendReady, 500);
     setTimeout(sendReady, 1000);
+    setTimeout(sendReady, 2500);
   }
 
   // ---- Boot ----

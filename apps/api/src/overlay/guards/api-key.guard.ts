@@ -28,7 +28,10 @@ export class ApiKeyGuard implements CanActivate {
 
     const project = allProjects.find((p) => {
       const settings = p.settings as Record<string, unknown> | null;
-      return settings?.apiKey === apiKey;
+      if (settings?.apiKey === apiKey) return true;
+      const legacy = settings?.legacyKeys;
+      if (Array.isArray(legacy) && legacy.includes(apiKey)) return true;
+      return false;
     });
 
     if (!project) {

@@ -60,8 +60,9 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<ENDSSH
   set -euo pipefail
   cd "${REMOTE_DIR}"
 
-  echo ">>> Pulling images & building containers..."
-  docker compose -f infra/docker-compose.prod.yml --env-file .env up --build -d
+  echo ">>> Building & starting containers (CACHEBUST=$(date +%s))..."
+  CACHEBUST=$(date +%s) docker compose -f infra/docker-compose.prod.yml --env-file .env build --build-arg CACHEBUST=\$CACHEBUST
+  docker compose -f infra/docker-compose.prod.yml --env-file .env up -d
 
   echo ">>> Waiting for Postgres to be healthy..."
   sleep 5

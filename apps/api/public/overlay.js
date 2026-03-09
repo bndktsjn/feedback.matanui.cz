@@ -578,7 +578,7 @@
   }
 
   // ---- Boot ----
-  console.log('[Bridge] Booting, IN_IFRAME:', IN_IFRAME, 'location:', location.href);
+  console.log('[Bridge] Booting, IN_IFRAME:', IN_IFRAME, 'API_KEY:', !!API_KEY, 'location:', location.href);
   if (IN_IFRAME) {
     // Bridge mode — communicate with admin panel, suppress widget UI
     console.log('[Bridge] Starting bridge mode');
@@ -590,8 +590,10 @@
   } else {
     // Widget mode — needs API key
     if (!API_KEY) {
-      console.error('[Feedback] Missing API key');
+      console.error('[Feedback] Missing API key - widget will not initialize');
+      return; // Exit early - don't create any UI
     } else {
+      console.log('[Feedback] Starting widget mode with API key');
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
       } else {

@@ -102,6 +102,28 @@ export function useBridge(
     if (!iframe || !baseUrl) return;
 
     let loadTimers: ReturnType<typeof setTimeout>[] = [];
+    let bridgeTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    let loadSeq = 0; // sequence counter for load events
+
+    // ── Try to read URL directly from iframe (same-origin only) ──
+    function tryDirectUrlRead(): string | null {
+      try {
+        const href = iframe!.contentWindow?.location.href;
+        if (href && href !== 'about:blank') return href;
+      } catch { /* cross-origin — expected */ }
+      return null;
+    }
+
+    // ── Update URL from any source (bridge or direct read) ──
+    function updateUrl(rawUrl: string, source: string) {
+      const url = canonicalUrl(rawUrl);
+      setCurrentPageUrl((prev) => {
+        if (prev !== url) {
+          console.log(`[useBridge] URL updated (${source})`, { from: prev, to: url });
+        }
+        return url;
+      });
+    }
 
     // ── Send command to iframe ──
     function send(data: Record<string, unknown>) {
@@ -115,16 +137,12 @@ export function useBridge(
 
       switch (d.type) {
         case 'FB_READY': {
-          console.log('[useBridge] FB_READY received', { pageUrl: d.pageUrl, pageTitle: d.pageTitle });
+          console.log('[useBridge] FB_READY received', { pageUrl: d.pageUrl, pageTitle: d.pageTitle, docHeight: d.docHeight });
           bridgeActiveRef.current = true;
           setConnected(true);
-          if (d.pageUrl) {
-            const url = canonicalUrl(d.pageUrl);
-            setCurrentPageUrl((prev) => {
-              if (prev !== url) console.log('[useBridge] URL updated', { from: prev, to: url });
-              return url;
-            });
-          }
+          // Cancel bridge timeout — we got a response
+          if (bridgeTimeoutTimer) { clearTimeout(bridgeTimeoutTimer); bridgeTimeoutTimer = null; }
+          if (d.pageUrl) updateUrl(d.pageUrl, 'FB_READY');
           if (d.docHeight > 0) { docHeightRef.current = d.docHeight; setDocHeight(d.docHeight); }
           if (d.vpHeight > 0) vpHeightRef.current = d.vpHeight;
           if (d.scrollY != null) { scrollYRef.current = d.scrollY; applyScrollTransform(d.scrollY); }
@@ -134,13 +152,7 @@ export function useBridge(
         case 'FB_NAVIGATED': {
           console.log('[useBridge] FB_NAVIGATED received', { pageUrl: d.pageUrl });
           bridgeActiveRef.current = true;
-          if (d.pageUrl) {
-            const url = canonicalUrl(d.pageUrl);
-            setCurrentPageUrl((prev) => {
-              if (prev !== url) console.log('[useBridge] URL updated (nav)', { from: prev, to: url });
-              return url;
-            });
-          }
+          if (d.pageUrl) updateUrl(d.pageUrl, 'FB_NAVIGATED');
           break;
         }
 
@@ -170,7 +182,6 @@ export function useBridge(
         }
 
         case 'FB_FOCUS': {
-          // Iframe got focus — bridge is alive
           bridgeActiveRef.current = true;
           break;
         }
@@ -178,11 +189,12 @@ export function useBridge(
         case 'FB_PONG': {
           bridgeActiveRef.current = true;
           setConnected(true);
+          // FB_PONG also carries pageUrl — use it as a URL sync mechanism
+          if (d.pageUrl) updateUrl(d.pageUrl, 'FB_PONG');
           break;
         }
 
         case 'FB_SCREENSHOT_RESULT': {
-          // Handled by screenshot capture system (via custom event)
           window.dispatchEvent(new CustomEvent('fb-screenshot-result', { detail: d }));
           break;
         }
@@ -191,18 +203,41 @@ export function useBridge(
 
     window.addEventListener('message', handleMessage);
 
-    // ── Iframe load → probe bridge ──
+    // ── Iframe load → detect URL + probe bridge ──
     function onIframeLoad() {
-      console.log('[useBridge] iframe.load fired — probing bridge');
+      const seq = ++loadSeq;
+      console.log('[useBridge] iframe.load fired (seq=' + seq + ') — detecting URL + probing bridge');
       bridgeActiveRef.current = false;
       setConnected(false);
-      // Clear old timers
+
+      // 1) IMMEDIATE: try same-origin URL read (works if same origin, harmless if cross-origin)
+      const directUrl = tryDirectUrlRead();
+      if (directUrl) {
+        console.log('[useBridge] Same-origin URL detected on load:', directUrl);
+        updateUrl(directUrl, 'direct-load');
+      }
+
+      // 2) BRIDGE PROBING: send FB_INIT with aggressive retries
       loadTimers.forEach(clearTimeout);
       loadTimers = [];
-      // Aggressive INIT retries (bridge script may load after DOMContentLoaded)
       [0, 150, 400, 800, 1500, 3000].forEach((ms) => {
         loadTimers.push(setTimeout(() => send({ type: 'FB_INIT' }), ms));
       });
+
+      // 3) TIMEOUT FALLBACK: if bridge doesn't respond within 5s, try direct read again
+      if (bridgeTimeoutTimer) clearTimeout(bridgeTimeoutTimer);
+      bridgeTimeoutTimer = setTimeout(() => {
+        if (bridgeActiveRef.current) return; // Bridge responded — no action needed
+        console.warn('[useBridge] Bridge timeout (5s) — no FB_READY received after load seq=' + seq);
+        // Final attempt: try same-origin read
+        const fallbackUrl = tryDirectUrlRead();
+        if (fallbackUrl) {
+          console.log('[useBridge] Fallback URL read succeeded:', fallbackUrl);
+          updateUrl(fallbackUrl, 'timeout-fallback');
+        } else {
+          console.error('[useBridge] CRITICAL: Cannot detect iframe URL — bridge not responding and cross-origin prevents direct read. Pins may attach to wrong page!');
+        }
+      }, 5000);
     }
 
     iframe.addEventListener('load', onIframeLoad);
@@ -210,7 +245,7 @@ export function useBridge(
     // ── Initial probe ──
     send({ type: 'FB_INIT' });
 
-    // ── Heartbeat: ping every 5s ──
+    // ── Heartbeat: ping every 5s (now also syncs URL via FB_PONG) ──
     const heartbeat = setInterval(() => send({ type: 'FB_PING' }), 5000);
 
     // ── Same-origin fallback: poll URL + dimensions directly ──
@@ -220,7 +255,12 @@ export function useBridge(
         const href = iframe.contentWindow?.location.href;
         if (href && href !== 'about:blank') {
           const url = canonicalUrl(href);
-          setCurrentPageUrl((prev) => prev !== url ? url : prev);
+          setCurrentPageUrl((prev) => {
+            if (prev !== url) {
+              console.log('[useBridge] Same-origin poll detected URL change:', { from: prev, to: url });
+            }
+            return prev !== url ? url : prev;
+          });
         }
         const doc = iframe.contentDocument;
         if (doc?.documentElement) {
@@ -250,6 +290,7 @@ export function useBridge(
       clearInterval(heartbeat);
       clearInterval(sameFallback);
       loadTimers.forEach(clearTimeout);
+      if (bridgeTimeoutTimer) clearTimeout(bridgeTimeoutTimer);
     };
   }, [iframeRef, baseUrl]); // Stable deps only — callbacks via refs
 

@@ -177,12 +177,25 @@ export default function PinOverlay({
   // Filter pins by current page URL AND viewport (matches WPF renderPins double-filter)
   const pinThreads = threads.filter((t) => {
     if (t.contextType !== 'pin' || t.xPct == null || t.yPct == null) return false;
-    // Viewport filter — WPF checks (t.viewport || 'desktop') !== viewportFilter
     if ((t.viewport || 'desktop') !== viewport) return false;
-    if (!currentPageUrl) return false; // URL not yet known — don't show pins
+    if (!currentPageUrl) return false;
     const threadUrl = canonicalUrl(t.pageUrl || '');
     return threadUrl === currentPageUrl;
   });
+
+  // Debug: log pin filtering on every render (helps trace stale pin issues)
+  if (threads.length > 0) {
+    const pinCandidates = threads.filter(t => t.contextType === 'pin' && t.xPct != null && t.yPct != null);
+    if (pinCandidates.length !== pinThreads.length) {
+      console.log('[PinOverlay] Pin filter:', {
+        currentPageUrl,
+        viewport,
+        totalPins: pinCandidates.length,
+        visiblePins: pinThreads.length,
+        urls: [...new Set(pinCandidates.map(t => canonicalUrl(t.pageUrl || '')))],
+      });
+    }
+  }
 
   return (
     <div

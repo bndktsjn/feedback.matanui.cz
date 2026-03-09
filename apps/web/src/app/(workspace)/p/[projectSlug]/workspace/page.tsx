@@ -6,6 +6,7 @@ import { threads as threadsApi, attachments as attachmentsApi, orgs, projects, a
 import { ProjectInfo, Viewport, StatusFilter, ScopeFilter, ViewMode, DraftPin, StatusCounts } from './types';
 import type { StagedFile } from './components/Composer';
 import { useBridge } from './hooks/useBridge';
+import { canonicalUrl } from './lib/utils';
 import { getEnvironment } from './lib/environment';
 import { captureScreenshot, screenshotBlobToFile } from './lib/screenshot';
 import Toolbar from './components/Toolbar';
@@ -160,12 +161,14 @@ export default function WorkspacePage() {
   /* ── Load threads ───────────────────────────────────────────── */
   const loadThreads = useCallback(async () => {
     if (!project) return;
+    // Read URL from ref (always fresh) instead of closure (may be stale)
+    const url = currentPageUrlRef.current;
     const p: Record<string, string> = { status: statusFilter, viewport, per_page: '100' };
-    if (scopeFilter === 'this_page') p.pageUrl = currentPageUrl;
+    if (scopeFilter === 'this_page') p.pageUrl = url;
     
     console.log('🔍 Loading threads:', {
       projectId: project.id,
-      currentPageUrl,
+      currentPageUrl: url,
       scopeFilter,
       params: p,
     });
@@ -175,7 +178,7 @@ export default function WorkspacePage() {
         threadsApi.list(project.id, p),
         threadsApi.statusCounts(project.id, {
           viewport,
-          ...(scopeFilter === 'this_page' ? { pageUrl: currentPageUrl } : {}),
+          ...(scopeFilter === 'this_page' ? { pageUrl: url } : {}),
         }),
       ]);
       
@@ -242,6 +245,26 @@ export default function WorkspacePage() {
     }, 10000);
     return () => clearInterval(interval);
   }, [project, loadThreads]);
+
+  // Direct bridge URL listener — catches FB_READY/FB_NAVIGATED even if
+  // useBridge's internal state update doesn't propagate to loadThreads
+  useEffect(() => {
+    function onBridgeUrl(e: MessageEvent) {
+      const d = e.data;
+      if (!d || typeof d.type !== 'string') return;
+      if ((d.type === 'FB_READY' || d.type === 'FB_NAVIGATED') && d.pageUrl) {
+        const url = canonicalUrl(d.pageUrl);
+        if (url && url !== currentPageUrlRef.current) {
+          console.log('[page] Bridge URL change detected:', { from: currentPageUrlRef.current, to: url });
+          currentPageUrlRef.current = url;
+          // Force immediate thread reload with new URL
+          loadThreads();
+        }
+      }
+    }
+    window.addEventListener('message', onBridgeUrl);
+    return () => window.removeEventListener('message', onBridgeUrl);
+  }, [loadThreads]);
 
   /* ── Keyboard shortcuts ─────────────────────────────────────── */
   useEffect(() => {

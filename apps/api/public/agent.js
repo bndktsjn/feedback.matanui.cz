@@ -35,6 +35,58 @@
   var shadow = null;        // Shadow DOM root
   var agentRoot = null;     // host element
 
+  // ── Offline Queue ──
+  var QUEUE_KEY = 'fb_agent_queue';
+  function getQueue() {
+    try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function saveQueue(q) {
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch (e) { /* quota */ }
+  }
+  function enqueue(payload) {
+    var q = getQueue();
+    payload._queuedAt = Date.now();
+    q.push(payload);
+    saveQueue(q);
+    updateQueueBadge();
+  }
+  function flushQueue() {
+    var q = getQueue();
+    if (!q.length) return;
+    console.log('[FBAgent] Flushing offline queue:', q.length, 'items');
+    saveQueue([]); // clear immediately to avoid duplicate flushes
+    var failed = [];
+    var chain = Promise.resolve();
+    q.forEach(function (item) {
+      chain = chain.then(function () {
+        var payload = Object.assign({}, item);
+        delete payload._queuedAt;
+        return apiPost('/overlay/threads', payload).catch(function () {
+          failed.push(item);
+        });
+      });
+    });
+    chain.then(function () {
+      if (failed.length) {
+        saveQueue(failed.concat(getQueue()));
+        console.warn('[FBAgent] Queue flush: ' + failed.length + ' items still pending');
+      } else {
+        console.log('[FBAgent] Queue flushed successfully');
+        loadPins();
+      }
+      updateQueueBadge();
+    });
+  }
+  function updateQueueBadge() {
+    if (!shadow) return;
+    var badge = shadow.querySelector('.fb-queue-badge');
+    var count = getQueue().length;
+    if (badge) {
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'flex' : 'none';
+    }
+  }
+
   // ── Canonical URL (strip hash + trailing slash) ──
   function canonical(url) {
     try { return url.split('#')[0].replace(/\/+$/, ''); } catch (e) { return url; }
@@ -184,6 +236,8 @@
     '.fb-trigger.active{background:#dc2626}',
     // Panel
     '.fb-panel{position:fixed;bottom:80px;right:20px;z-index:2147483647;width:380px;max-height:560px;background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.15);display:none;flex-direction:column;overflow:hidden}',
+    '@media(max-width:480px){.fb-panel{left:8px;right:8px;bottom:72px;width:auto;max-height:70vh;border-radius:10px}.fb-trigger{bottom:12px;right:12px;width:44px;height:44px}}',
+    '.fb-queue-badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;background:#f59e0b;color:#fff;border-radius:9px;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 4px}',
     '.fb-panel.open{display:flex}',
     '.fb-panel-header{padding:14px 16px;background:#2563eb;color:#fff;display:flex;justify-content:space-between;align-items:center}',
     '.fb-panel-header h3{margin:0;font-size:15px;font-weight:600}',
@@ -271,6 +325,7 @@
       // Trigger
       '<button class="fb-trigger" title="Send Feedback">',
       '  <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>',
+      '  <span class="fb-queue-badge" style="display:none"></span>',
       '</button>',
       // Panel
       '<div class="fb-panel">',
@@ -343,17 +398,22 @@
   // ══════════════════════════════════════════════════════════
   // PIN MODE
   // ══════════════════════════════════════════════════════════
+  var isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
   function enterPinMode() {
     isPinMode = true;
     var panel = shadow.querySelector('.fb-panel');
     panel.classList.remove('open');
     shadow.querySelector('.fb-trigger').classList.add('active');
     shadow.querySelector('.fb-mode-toggle').classList.add('active');
-    shadow.querySelector('.fb-mode-toggle').textContent = '✕ Cancel pin';
-    shadow.querySelector('.fb-pin-cursor').style.display = 'block';
-    document.body.style.cursor = 'crosshair';
-    document.addEventListener('mousemove', onPinMove, true);
+    shadow.querySelector('.fb-mode-toggle').textContent = '\u2715 Cancel pin';
+    if (!isTouchDevice) {
+      shadow.querySelector('.fb-pin-cursor').style.display = 'block';
+      document.body.style.cursor = 'crosshair';
+      document.addEventListener('mousemove', onPinMove, true);
+    }
     document.addEventListener('click', onPinClick, true);
+    document.addEventListener('touchend', onPinTouch, true);
     document.addEventListener('keydown', onPinEscape, true);
   }
 
@@ -366,6 +426,7 @@
     document.body.style.cursor = '';
     document.removeEventListener('mousemove', onPinMove, true);
     document.removeEventListener('click', onPinClick, true);
+    document.removeEventListener('touchend', onPinTouch, true);
     document.removeEventListener('keydown', onPinEscape, true);
   }
 
@@ -411,6 +472,44 @@
 
     exitPinMode();
     // Open panel with pin badge
+    isOpen = true;
+    shadow.querySelector('.fb-panel').classList.add('open');
+    renderFormView();
+  }
+
+  function onPinTouch(e) {
+    if (!isPinMode) return;
+    // Ignore touches on agent UI
+    if (e.target.closest && e.target.closest('#fb-agent')) return;
+    e.preventDefault();
+    var touch = e.changedTouches[0];
+    if (!touch) return;
+    var docW = document.documentElement.scrollWidth;
+    var docH = document.documentElement.scrollHeight;
+    var pageX = touch.pageX, pageY = touch.pageY;
+    var xPct = (pageX / docW) * 100;
+    var yPct = (pageY / docH) * 100;
+    var el = document.elementFromPoint(touch.clientX, touch.clientY);
+    var selector = el ? getSelector(el) : '';
+    pinData = {
+      xPct: Math.round(xPct * 10000) / 10000,
+      yPct: Math.round(yPct * 10000) / 10000,
+      selector: selector,
+      anchorData: el ? {
+        tagName: el.tagName,
+        textPreview: (el.textContent || '').substring(0, 80).trim(),
+        rect: el.getBoundingClientRect().toJSON(),
+        scrollY: window.scrollY,
+      } : null,
+    };
+    removeTempPin();
+    var marker = document.createElement('div');
+    marker.className = 'fb-agent-pin fb-agent-pin-temp';
+    marker.innerHTML = '<div class="fb-agent-pin-dot">&#9679;</div>';
+    marker.style.left = (pageX - 14) + 'px';
+    marker.style.top = (pageY - 14) + 'px';
+    document.body.appendChild(marker);
+    exitPinMode();
     isOpen = true;
     shadow.querySelector('.fb-panel').classList.add('open');
     renderFormView();
@@ -596,7 +695,28 @@
         loadPins(); // Refresh pins
       }, 2000);
     }).catch(function (e) {
-      alert('Failed to send: ' + e);
+      // Offline or network error — queue for retry
+      if (!navigator.onLine || (e && (e.message === 'Failed to fetch' || e === 'Failed to fetch'))) {
+        enqueue(body);
+        shadow.querySelector('.fb-panel-body').style.display = 'none';
+        shadow.querySelector('.fb-panel-footer').style.display = 'none';
+        var success = shadow.querySelector('.fb-success');
+        success.querySelector('h4').textContent = '\u{1F4E6} Saved offline';
+        success.querySelector('p').textContent = 'Will send automatically when you\'re back online.';
+        success.classList.add('show');
+        removeTempPin();
+        pinData = null;
+        setTimeout(function () {
+          isOpen = false;
+          shadow.querySelector('.fb-panel').classList.remove('open');
+          shadow.querySelector('.fb-trigger').classList.remove('active');
+          success.classList.remove('show');
+          success.querySelector('h4').innerHTML = '&#10003; Feedback sent!';
+          success.querySelector('p').textContent = 'Thank you for your feedback.';
+        }, 2500);
+      } else {
+        alert('Failed to send: ' + e);
+      }
     }).finally(function () {
       btn.disabled = false;
       btn.textContent = 'Send';
@@ -763,6 +883,14 @@
     setupNavDetection();
     setupKeyboard();
     setupPinReposition();
+
+    // Online/offline queue handling
+    window.addEventListener('online', function () {
+      console.log('[FBAgent] Back online, flushing queue');
+      flushQueue();
+    });
+    updateQueueBadge();
+    if (navigator.onLine) flushQueue();
 
     // Fetch config + load pins
     apiGet('/overlay/config')

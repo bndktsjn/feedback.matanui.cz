@@ -95,7 +95,6 @@ export default function WorkspacePage() {
   const prevPageUrl = useRef('');
   useEffect(() => {
     if (prevPageUrl.current && prevPageUrl.current !== currentPageUrl && currentPageUrl) {
-      console.log('[Workspace] Page changed', { from: prevPageUrl.current, to: currentPageUrl });
       setDraftPin(null);
       setPopoverThread(null);
       setPopoverPinRect(null);
@@ -165,14 +164,6 @@ export default function WorkspacePage() {
     const url = currentPageUrlRef.current;
     const p: Record<string, string> = { status: statusFilter, viewport, per_page: '100' };
     if (scopeFilter === 'this_page') p.pageUrl = url;
-    
-    console.log('🔍 Loading threads:', {
-      projectId: project.id,
-      currentPageUrl: url,
-      scopeFilter,
-      params: p,
-    });
-    
     try {
       const [list, counts] = await Promise.all([
         threadsApi.list(project.id, p),
@@ -181,13 +172,6 @@ export default function WorkspacePage() {
           ...(scopeFilter === 'this_page' ? { pageUrl: url } : {}),
         }),
       ]);
-      
-      console.log('📊 Loaded threads:', {
-        count: list.length,
-        threads: list.map(t => ({ id: t.id, pageUrl: t.pageUrl, xPct: t.xPct, yPct: t.yPct })),
-        counts,
-      });
-      
       // Normalize Prisma Decimal strings to numbers for xPct/yPct
       const normalized = list.map((t) => ({
         ...t,
@@ -240,7 +224,6 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!project) return;
     const interval = setInterval(() => {
-      console.log('🔄 Polling for thread updates...');
       loadThreads();
     }, 10000);
     return () => clearInterval(interval);
@@ -255,7 +238,6 @@ export default function WorkspacePage() {
       if ((d.type === 'FB_READY' || d.type === 'FB_NAVIGATED') && d.pageUrl) {
         const url = canonicalUrl(d.pageUrl);
         if (url && url !== currentPageUrlRef.current) {
-          console.log('[page] Bridge URL change detected:', { from: currentPageUrlRef.current, to: url });
           currentPageUrlRef.current = url;
           // Force immediate thread reload with new URL
           loadThreads();
@@ -376,9 +358,7 @@ export default function WorkspacePage() {
       localStorage.setItem('wpf-guest-email', guestEmail.trim().toLowerCase());
     }
     
-    console.log('📝 Creating thread:', threadData);
     const created = await threadsApi.create(project.id, threadData);
-    console.log('✅ Thread created:', created);
     setDraftPin(null);
     setPinMode(true);
     showToast('Thread created');

@@ -440,6 +440,52 @@ elementPreview String?  @map("element_preview") @db.Text
 
 ---
 
+## 7. Implementation Progress
+
+### Completed (March 2026)
+
+**Phase 1: Research + Proposal** ✅
+- Competitor deep-dive (BugHerd, Marker.io, Userback)
+- Current app audit
+- Architecture proposal (this document)
+
+**Phase 2: Core Overlay Agent** ✅
+- New API endpoints: `GET /overlay/threads`, `GET /overlay/threads/:id`, `POST /overlay/threads/:id/comments`, `PATCH /overlay/threads/:id`
+- `agent.js` (35KB) — self-contained vanilla JS in-page feedback widget:
+  - Shadow DOM isolation, floating trigger button
+  - Pin mode with CSS selector capture + percentage coordinates
+  - Screenshot capture via html2canvas
+  - Form with title, type, priority, message
+  - Existing pins display (fetched from API)
+  - Thread detail view with commenting
+  - SPA navigation detection (pushState/popstate/hashchange)
+  - Keyboard shortcuts, pin repositioning on scroll/resize
+- Deployed to `https://feedback.matanui.cz/static/agent.js`
+- WordPress site updated: agent.js (widget) + overlay.js (bridge compat)
+
+**Phase 3: Admin Dashboard Enhancement** ✅
+- Pin markers on screenshots in threads dashboard
+- Page URL filter for thread list
+- Screenshot lightbox with pin overlay
+- "View in workspace" links
+- Thread detail page: avatar, environment grid, pin-on-screenshot
+- Pin dot indicators on list thumbnails
+
+### Remaining
+
+**Phase 4: Full Migration**
+- Remove iframe bridge dependency from admin workspace
+- Migrate workspace page to thread-list-first view
+- Remove dead bridge code (useBridge, PinOverlay iframe integration)
+
+**Phase 5: Production Hardening**
+- Offline queue in agent.js
+- Mobile responsiveness audit
+- Performance optimization
+- Full regression testing
+
+---
+
 ## 6. Risk Assessment
 
 | Risk | Impact | Mitigation |

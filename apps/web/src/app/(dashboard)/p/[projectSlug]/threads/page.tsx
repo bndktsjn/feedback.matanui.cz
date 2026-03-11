@@ -72,6 +72,29 @@ function renderWithMentions(text: string): { __html: string } {
   return { __html: result };
 }
 
+/** Screenshot with pin marker overlay */
+function ScreenshotWithPin({ url, xPct, yPct, className, onClick }: {
+  url: string; xPct?: number | null; yPct?: number | null;
+  className?: string; onClick?: () => void;
+}) {
+  return (
+    <div className={`relative overflow-hidden ${className || ''}`} onClick={onClick} style={{ cursor: onClick ? 'pointer' : undefined }}>
+      <img src={url} alt="Screenshot" className="w-full object-contain" />
+      {xPct != null && yPct != null && (
+        <div
+          className="absolute z-10"
+          style={{ left: `${xPct}%`, top: `${yPct}%`, transform: 'translate(-50%, -100%)' }}
+        >
+          <svg viewBox="0 0 24 36" width="20" height="30" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 24 12 24s12-15 12-24C24 5.37 18.63 0 12 0zm0 16.5c-2.48 0-4.5-2.02-4.5-4.5S9.52 7.5 12 7.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5z" fill="#2563eb"/>
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 24 12 24s12-15 12-24C24 5.37 18.63 0 12 0zm0 16.5c-2.48 0-4.5-2.02-4.5-4.5S9.52 7.5 12 7.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5z" fill="none" stroke="#fff" strokeWidth="1.5"/>
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Avatar({ user, size = 'sm' }: { user?: { displayName: string; avatarUrl: string | null }; size?: 'sm' | 'md' }) {
   const cls = size === 'md' ? 'h-8 w-8 text-xs' : 'h-6 w-6 text-[10px]';
   if (user?.avatarUrl) {
@@ -96,6 +119,8 @@ export default function ThreadsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [pageUrlFilter, setPageUrlFilter] = useState('');
+  const [screenshotOpen, setScreenshotOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   // Detail panel
@@ -119,10 +144,11 @@ export default function ThreadsPage() {
       if (statusFilter) p.status = statusFilter;
       if (priorityFilter) p.priority = priorityFilter;
       if (typeFilter) p.type = typeFilter;
+      if (pageUrlFilter) p.pageUrl = pageUrlFilter;
       const list = await threads.list(proj.id, p);
       setThreadList(list);
     },
-    [statusFilter, priorityFilter, typeFilter],
+    [statusFilter, priorityFilter, typeFilter, pageUrlFilter],
   );
 
   useEffect(() => {
@@ -241,7 +267,7 @@ export default function ThreadsPage() {
   if (!project) return <div className="text-gray-500">Project not found.</div>;
 
   const isAdmin = currentUserRole === 'admin';
-  const activeFilters = [statusFilter, priorityFilter, typeFilter].filter(Boolean).length;
+  const activeFilters = [statusFilter, priorityFilter, typeFilter, pageUrlFilter].filter(Boolean).length;
 
   return (
     <div className="flex h-full gap-4">
@@ -291,9 +317,26 @@ export default function ThreadsPage() {
               <option key={t.value} value={t.value}>{t.label}</option>
             ))}
           </select>
+          {/* Page URL filter */}
+          {(() => {
+            const urls = [...new Set(threadList.map(t => t.pageUrl).filter(Boolean))];
+            if (urls.length > 1 || pageUrlFilter) return (
+              <select
+                value={pageUrlFilter}
+                onChange={(e) => setPageUrlFilter(e.target.value)}
+                className={`max-w-[200px] truncate rounded-md border px-3 py-1.5 text-sm ${pageUrlFilter ? 'border-blue-300 bg-blue-50' : 'border-gray-300'}`}
+              >
+                <option value="">All pages</option>
+                {urls.map((u) => (
+                  <option key={u} value={u}>{new URL(u).pathname || '/'}</option>
+                ))}
+              </select>
+            );
+            return null;
+          })()}
           {activeFilters > 0 && (
             <button
-              onClick={() => { setStatusFilter(''); setPriorityFilter(''); setTypeFilter(''); }}
+              onClick={() => { setStatusFilter(''); setPriorityFilter(''); setTypeFilter(''); setPageUrlFilter(''); }}
               className="text-sm text-gray-500 hover:text-gray-700"
             >
               Clear filters
@@ -507,36 +550,31 @@ export default function ThreadsPage() {
                   )}
                 </div>
 
-                {/* Screenshot or page preview */}
+                {/* Screenshot with pin marker */}
                 {selectedThread.screenshotUrl ? (
-                  <div className="mt-3">
-                    <img
-                      src={selectedThread.screenshotUrl}
-                      alt="Screenshot"
-                      className="w-full rounded-lg border border-gray-200 object-contain cursor-pointer hover:opacity-90 transition"
-                      onClick={() => window.open(selectedThread.screenshotUrl!, '_blank')}
+                  <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
+                    <ScreenshotWithPin
+                      url={selectedThread.screenshotUrl}
+                      xPct={selectedThread.xPct}
+                      yPct={selectedThread.yPct}
+                      onClick={() => setScreenshotOpen(true)}
                     />
                   </div>
-                ) : selectedThread.pageUrl ? (
-                  <div className="mt-3 rounded-lg overflow-hidden border border-gray-200 relative bg-gray-50">
-                    <div className="relative" style={{ paddingBottom: '56.25%' }}>
-                      <iframe
-                        src={selectedThread.pageUrl}
-                        className="absolute inset-0 w-full h-full border-0"
-                        sandbox="allow-scripts allow-same-origin"
-                        loading="lazy"
-                        title="Page preview"
-                      />
-                      <a
-                        href={selectedThread.pageUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="absolute inset-0 z-10"
-                        title="Open page in new tab"
-                      />
-                    </div>
-                  </div>
                 ) : null}
+
+                {/* Open in workspace link */}
+                {selectedThread.pageUrl && (
+                  <a
+                    href={`/p/${projectSlug}/workspace?thread=${selectedThread.id}&viewport=${selectedThread.viewport || 'desktop'}`}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 transition"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    View in workspace
+                  </a>
+                )}
 
                 {/* Page URL */}
                 {selectedThread.pageUrl && (
@@ -671,6 +709,30 @@ export default function ThreadsPage() {
                 </svg>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Screenshot lightbox */}
+      {screenshotOpen && selectedThread?.screenshotUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setScreenshotOpen(false)}
+        >
+          <div className="relative max-h-[90vh] max-w-[90vw] overflow-auto rounded-lg bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setScreenshotOpen(false)}
+              className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <ScreenshotWithPin
+              url={selectedThread.screenshotUrl}
+              xPct={selectedThread.xPct}
+              yPct={selectedThread.yPct}
+            />
           </div>
         </div>
       )}

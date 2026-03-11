@@ -218,7 +218,7 @@ export class OverlayController {
   async updateThread(
     @Req() req: Request,
     @Param('threadId') threadId: string,
-    @Body() body: { status?: string },
+    @Body() body: { status?: string; xPct?: number; yPct?: number },
   ): Promise<Record<string, unknown>> {
     const project = (req as Request & { project: ProjectFromGuard }).project;
     const thread = await this.prisma.thread.findFirst({
@@ -231,11 +231,13 @@ export class OverlayController {
     if (body.status === 'resolved' && thread.status !== 'resolved') {
       data.resolvedAt = new Date();
     }
+    if (body.xPct != null) data.xPct = body.xPct;
+    if (body.yPct != null) data.yPct = body.yPct;
 
     const updated = await this.prisma.thread.update({
       where: { id: threadId },
       data,
     });
-    return { id: updated.id, status: updated.status };
+    return { id: updated.id, status: updated.status, xPct: updated.xPct != null ? Number(updated.xPct) : null, yPct: updated.yPct != null ? Number(updated.yPct) : null };
   }
 }

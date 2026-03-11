@@ -32,38 +32,6 @@ const STATUS_COLORS: Record<string, string> = {
   closed: 'bg-gray-100 text-gray-600',
 };
 
-function ScreenshotWithPin({ url, xPct, yPct }: {
-  url: string; xPct?: number | null; yPct?: number | null;
-}) {
-  return (
-    <div className="relative overflow-hidden rounded-lg border border-gray-200">
-      <img src={url} alt="Screenshot" className="w-full object-contain" />
-      {xPct != null && yPct != null && (
-        <div
-          className="absolute z-10"
-          style={{ left: `${xPct}%`, top: `${yPct}%`, transform: 'translate(-50%, -100%)' }}
-        >
-          <svg viewBox="0 0 24 36" width="24" height="36" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 24 12 24s12-15 12-24C24 5.37 18.63 0 12 0zm0 16.5c-2.48 0-4.5-2.02-4.5-4.5S9.52 7.5 12 7.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5z" fill="#2563eb"/>
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 24 12 24s12-15 12-24C24 5.37 18.63 0 12 0zm0 16.5c-2.48 0-4.5-2.02-4.5-4.5S9.52 7.5 12 7.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5z" fill="none" stroke="#fff" strokeWidth="1.5"/>
-          </svg>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Avatar({ name, avatarUrl }: { name?: string; avatarUrl?: string | null }) {
-  if (avatarUrl) {
-    return <img src={avatarUrl} alt={name || ''} className="h-8 w-8 rounded-full object-cover ring-1 ring-gray-200" />;
-  }
-  return (
-    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-600 ring-1 ring-blue-200">
-      {name?.charAt(0)?.toUpperCase() || '?'}
-    </div>
-  );
-}
-
 export default function ThreadDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -168,87 +136,45 @@ export default function ThreadDetailPage() {
 
         <p className="mt-4 whitespace-pre-wrap text-sm text-gray-700" dangerouslySetInnerHTML={renderWithMentions(thread.message)} />
 
-        {/* Author info */}
-        <div className="mt-4 flex items-center gap-3 border-t border-gray-200 pt-4">
-          <Avatar name={thread.author?.displayName} avatarUrl={thread.author?.avatarUrl} />
-          <div>
-            <p className="text-sm font-medium text-gray-900">{thread.author?.displayName || 'Anonymous'}</p>
-            <p className="text-xs text-gray-400">{new Date(thread.createdAt).toLocaleString()}</p>
-          </div>
-        </div>
-
-        {/* Screenshot with pin marker */}
         {thread.screenshotUrl && (
           <div className="mt-4">
-            <ScreenshotWithPin
-              url={thread.screenshotUrl}
-              xPct={thread.xPct}
-              yPct={thread.yPct}
+            <img
+              src={thread.screenshotUrl}
+              alt="Screenshot"
+              className="max-w-full rounded border border-gray-200"
             />
           </div>
         )}
 
-        {/* Page + workspace link */}
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          {thread.pageUrl && (
-            <a
-              href={thread.pageUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-500"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-              {thread.pageUrl}
-            </a>
-          )}
-          {thread.pageUrl && (
-            <a
-              href={`/p/${projectSlug}/workspace?thread=${thread.id}&viewport=${thread.viewport || 'desktop'}`}
-              className="inline-flex items-center gap-1 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              View in workspace
-            </a>
-          )}
+        <div className="mt-4 flex items-center gap-4 border-t border-gray-200 pt-4 text-xs text-gray-500">
+          <span>By {thread.author?.displayName || 'Anonymous'}</span>
+          <span>{new Date(thread.createdAt).toLocaleString()}</span>
+          <a
+            href={thread.pageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="truncate text-blue-600 hover:underline"
+          >
+            {thread.pageUrl}
+          </a>
         </div>
 
-        {/* Environment details */}
         {thread.environment && (() => {
           const env = thread.environment as unknown as ThreadEnv;
           return (
-            <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-gray-50 p-3">
-              {env.browserName && (
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Browser</p>
-                  <p className="text-xs text-gray-600">{env.browserName} {env.browserVersion}</p>
-                </div>
-              )}
-              {env.osName && (
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">OS</p>
-                  <p className="text-xs text-gray-600">{env.osName}</p>
-                </div>
-              )}
-              {env.viewportWidth && (
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Viewport</p>
-                  <p className="text-xs text-gray-600">{env.viewportWidth}&times;{env.viewportHeight}</p>
-                </div>
-              )}
-              {thread.viewport && (
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Device</p>
-                  <p className="text-xs text-gray-600 capitalize">{thread.viewport}</p>
-                </div>
-              )}
+            <div className="mt-3 rounded bg-gray-50 p-3 text-xs text-gray-500">
+              <span className="font-medium">Environment:</span> {env.browserName}{' '}
+              {env.browserVersion} &middot; {env.osName} &middot;{' '}
+              {env.viewportWidth}&times;{env.viewportHeight}
             </div>
           );
         })()}
+
+        {thread.xPct != null && thread.yPct != null && (
+          <div className="mt-2 text-xs text-gray-400">
+            Pin: {thread.xPct.toFixed(2)}% x {thread.yPct.toFixed(2)}%
+          </div>
+        )}
       </div>
 
       {/* Comments */}

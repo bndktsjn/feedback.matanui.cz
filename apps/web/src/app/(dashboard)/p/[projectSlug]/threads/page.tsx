@@ -374,7 +374,17 @@ export default function ThreadsPage() {
                   {/* Thumbnail */}
                   <div className="shrink-0">
                     {thread.screenshotUrl ? (
-                      <img src={thread.screenshotUrl} alt="" className="h-12 w-16 rounded border border-gray-200 object-cover" />
+                      <div className="relative h-12 w-16 overflow-hidden rounded border border-gray-200">
+                        <img src={thread.screenshotUrl} alt="" className="h-full w-full object-cover" />
+                        {thread.xPct != null && thread.yPct != null && (
+                          <div
+                            className="absolute"
+                            style={{ left: `${thread.xPct}%`, top: `${thread.yPct}%`, transform: 'translate(-50%, -100%)' }}
+                          >
+                            <div className="h-2 w-2 rounded-full bg-blue-600 ring-1 ring-white" />
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="flex h-12 w-16 items-center justify-center rounded border border-gray-200 bg-gray-50 text-lg">
                         {TYPE_ICONS[thread.type] || TYPE_ICONS.general}
